@@ -44,43 +44,30 @@
     font-weight: 600;
     margin: 0 0 12px;
   }
-  .filters {
-    display: grid;
-    grid-template-columns: 1fr 1fr auto;
-    gap: 16px;
-    align-items: end;
+  .repo-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
   }
-  @media (max-width: 720px) {
-    .filters { grid-template-columns: 1fr; }
-  }
-  .field label {
-    display: block;
-    font-size: 12px;
-    color: var(--muted);
-    margin-bottom: 6px;
-    font-weight: 500;
-  }
-  select[multiple] {
+  .repo-picker input {
     width: 100%;
-    min-height: 90px;
-    padding: 6px;
+    padding: 10px 12px;
     border: 1px solid var(--border);
     border-radius: 6px;
     font: inherit;
     background: white;
   }
-  select[multiple] option { padding: 4px 6px; }
-  button {
-    padding: 10px 18px;
-    background: var(--accent);
-    color: white;
-    border: none;
-    border-radius: 6px;
-    font: inherit;
-    font-weight: 500;
-    cursor: pointer;
+  .repo-picker input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
   }
-  button:hover { background: #2855a0; }
+  .repo-status {
+    font-size: 12px;
+    color: var(--muted);
+    min-height: 16px;
+  }
+  .repo-status.warn { color: #b45309; }
 
   .stats {
     display: grid;
@@ -154,26 +141,19 @@
 <div class="container">
   <header>
     <h1>PR Cycle Time</h1>
-    <div class="subtitle">adobecom · mas · mas-pinata · milo</div>
+    <div class="subtitle">adobecom · single-repo view</div>
     <div class="freshness" id="freshness">Loading data…</div>
   </header>
 
   <div id="error" class="error" style="display:none;"></div>
 
   <div class="panel">
-    <div class="panel-title">Filters</div>
-    <div class="filters">
-      <div class="field">
-        <label for="repos">Repositories</label>
-        <select id="repos" multiple></select>
-      </div>
-      <div class="field">
-        <label for="authors">Authors</label>
-        <select id="authors" multiple></select>
-      </div>
-      <div>
-        <button id="apply">Apply filters</button>
-      </div>
+    <div class="panel-title">Repository</div>
+    <div class="repo-picker">
+      <input id="repo" list="repo-options" autocomplete="off"
+             placeholder="Type to search adobecom repos…" spellcheck="false">
+      <datalist id="repo-options"></datalist>
+      <div id="repo-status" class="repo-status"></div>
     </div>
   </div>
 
@@ -184,13 +164,9 @@
   </div>
 
   <div class="charts">
-    <div class="chart-card">
+    <div class="chart-card chart-wide">
       <h3>Cycle time distribution</h3>
       <div class="canvas-wrap"><canvas id="distChart"></canvas></div>
-    </div>
-    <div class="chart-card">
-      <h3>By author — average cycle time</h3>
-      <div class="canvas-wrap"><canvas id="authorChart"></canvas></div>
     </div>
     <div class="chart-card chart-wide">
       <h3>Monthly merged PRs &amp; average cycle time</h3>
@@ -228,24 +204,34 @@
 <script>
 const ACCENT = '#3266ad';
 
-let DATA = null;       // full payload from data.json
-let FILTERED = [];     // current filtered subset
-let charts = { dist: null, author: null, trend: null, weekly: null };
+let DATA = null;       // payload from data.json
+let REPOS_INDEX = null;// payload from repos.json (full org repo list)
+let TRACKED = null;    // Set of "owner/repo" with PR data
+let FILTERED = [];     // current selected repo's PRs
+let charts = { dist: null, trend: null, weekly: null };
 
 // ── Load data ─────────────────────────────────────────────────────────────
 async function loadData() {
   try {
-    const resp = await fetch('data.json?_=' + Date.now());
-    if (!resp.ok) throw new Error('HTTP ' + resp.status);
-    DATA = await resp.json();
-    initFilters();
-    applyFilters();
+    const [dataResp, reposResp] = await Promise.all([
+      fetch('data.json?_=' + Date.now()),
+      fetch('repos.json?_=' + Date.now()),
+    ]);
+    if (!dataResp.ok)  throw new Error('data.json HTTP '  + dataResp.status);
+    if (!reposResp.ok) throw new Error('repos.json HTTP ' + reposResp.status);
+    DATA = await dataResp.json();
+    REPOS_INDEX = await reposResp.json();
+    TRACKED = new Set(DATA.tracked_repos);
+
+    populateRepoDropdown();
+    wireInteractions();
     showFreshness();
+    setInitialRepo();
   } catch (e) {
     document.getElementById('freshness').textContent = '';
     const err = document.getElementById('error');
     err.style.display = 'block';
-    err.textContent = 'Failed to load data.json — ' + e.message
+    err.textContent = 'Failed to load data — ' + e.message
       + '. The daily refresh may not have run yet. Check the Actions tab in the repo.';
     document.getElementById('table-wrap').innerHTML = '';
   }
@@ -256,39 +242,89 @@ function showFreshness() {
   const opts = { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' };
   document.getElementById('freshness').textContent =
     'Data refreshed: ' + dt.toLocaleString(undefined, opts)
-    + ' · ' + DATA.prs.length + ' merged PRs · last ' + DATA.max_age_days + ' days';
+    + ' · ' + DATA.prs.length + ' merged PRs across ' + DATA.tracked_repos.length + ' tracked repos'
+    + ' · ' + REPOS_INDEX.repos.length + ' repos in ' + REPOS_INDEX.org;
 }
 
-// ── Filters ───────────────────────────────────────────────────────────────
-function initFilters() {
-  const repoSel = document.getElementById('repos');
-  DATA.repos.forEach(r => {
+// ── Repository picker ─────────────────────────────────────────────────────
+function populateRepoDropdown() {
+  const list = document.getElementById('repo-options');
+  list.innerHTML = '';
+  // Native datalist with the full org repo list. The browser handles search.
+  REPOS_INDEX.repos.forEach(name => {
     const o = document.createElement('option');
-    o.value = r; o.textContent = r; o.selected = true;
-    repoSel.appendChild(o);
+    o.value = name;
+    // Mark tracked repos so a user can see which ones have data
+    if (TRACKED.has(REPOS_INDEX.org + '/' + name)) {
+      o.label = name + '  — tracked';
+    }
+    list.appendChild(o);
   });
+}
 
-  const authorSel = document.getElementById('authors');
-  const authors = [...new Set(DATA.prs.map(p => p.author))].sort();
-  authors.forEach(a => {
-    const o = document.createElement('option');
-    o.value = a; o.textContent = a; o.selected = true;
-    authorSel.appendChild(o);
+function wireInteractions() {
+  const input = document.getElementById('repo');
+  // 'change' fires when the user picks from the dropdown or commits typing
+  input.addEventListener('change', onRepoChange);
+  // 'input' fires on every keystroke — let it through so picking from
+  // the datalist (which fires input then change) feels instant
+  input.addEventListener('input', (e) => {
+    // If the typed value exactly matches an option, treat as a selection
+    if (REPOS_INDEX.repos.includes(e.target.value.trim())) onRepoChange();
   });
-
-  document.getElementById('apply').addEventListener('click', applyFilters);
   document.getElementById('sort').addEventListener('change', renderTable);
   document.getElementById('weekMonth').addEventListener('change', renderWeeklyChart);
 }
 
-function applyFilters() {
-  const repos = [...document.getElementById('repos').selectedOptions].map(o => o.value);
-  const authors = [...document.getElementById('authors').selectedOptions].map(o => o.value);
-  const repoSet = new Set(repos);
-  const authorSet = new Set(authors);
+function setInitialRepo() {
+  // Default to first tracked repo (alphabetical from data.json)
+  const first = DATA.tracked_repos[0];
+  if (!first) {
+    showRepoStatus('No tracked repos available yet.', true);
+    return;
+  }
+  const name = first.split('/')[1];
+  document.getElementById('repo').value = name;
+  onRepoChange();
+}
 
-  FILTERED = DATA.prs.filter(p => repoSet.has(p.repo) && authorSet.has(p.author));
+function onRepoChange() {
+  const raw = document.getElementById('repo').value.trim();
+  if (!raw) {
+    FILTERED = [];
+    showRepoStatus('Pick a repository to see its data.');
+    renderAll();
+    return;
+  }
 
+  const fullName = REPOS_INDEX.org + '/' + raw;
+
+  if (!REPOS_INDEX.repos.includes(raw)) {
+    FILTERED = [];
+    showRepoStatus(`"${raw}" is not a repository in ${REPOS_INDEX.org}. Check the spelling or pick from the list.`, true);
+    renderAll();
+    return;
+  }
+
+  if (!TRACKED.has(fullName)) {
+    FILTERED = [];
+    showRepoStatus(`${fullName} hasn't had a merged PR in the last 30 days, so no data is tracked for it. It will start appearing automatically when activity resumes.`, true);
+    renderAll();
+    return;
+  }
+
+  FILTERED = DATA.prs.filter(p => p.repo === fullName);
+  showRepoStatus(`Showing ${FILTERED.length} merged PRs from ${fullName} over the last ${DATA.max_age_days} days.`);
+  renderAll();
+}
+
+function showRepoStatus(msg, warn = false) {
+  const el = document.getElementById('repo-status');
+  el.textContent = msg;
+  el.classList.toggle('warn', warn);
+}
+
+function renderAll() {
   renderStats();
   renderCharts();
   renderTable();
@@ -343,45 +379,6 @@ function renderCharts() {
       scales: {
         x: { grid: { display: false } },
         y: { grid: { color: 'rgba(0,0,0,0.06)' }, beginAtZero: true, ticks: { precision: 0 } }
-      }
-    }
-  });
-
-  // Author chart — average per author, top 15 by PR count
-  const byAuthor = {};
-  FILTERED.forEach(p => {
-    if (!byAuthor[p.author]) byAuthor[p.author] = [];
-    byAuthor[p.author].push(p.lead_days);
-  });
-  const authorRows = Object.entries(byAuthor)
-    .map(([a, vals]) => ({
-      author: a,
-      count: vals.length,
-      avg: vals.reduce((s, v) => s + v, 0) / vals.length
-    }))
-    .sort((a,b) => b.count - a.count)
-    .slice(0, 15);
-
-  charts.author = new Chart(document.getElementById('authorChart'), {
-    type: 'bar',
-    data: {
-      labels: authorRows.map(r => r.author),
-      datasets: [{ data: authorRows.map(r => r.avg), backgroundColor: ACCENT, borderRadius: 4 }]
-    },
-    options: {
-      indexAxis: 'y',
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => `Average ${ctx.parsed.x.toFixed(1)}d · ${authorRows[ctx.dataIndex].count} PRs`
-          }
-        }
-      },
-      scales: {
-        x: { grid: { color: 'rgba(0,0,0,0.06)' }, title: { display: true, text: 'Average days' } },
-        y: { grid: { display: false } }
       }
     }
   });
