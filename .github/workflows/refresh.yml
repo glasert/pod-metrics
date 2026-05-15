@@ -45,16 +45,17 @@ jobs:
       - name: Fetch PR data
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPOS: 'adobecom/mas,adobecom/mas-pinata,adobecom/milo'
+          ORG: 'adobecom'
+          TRACKED_WINDOW_DAYS: '30'
           MAX_PRS: '500'
           MAX_AGE_DAYS: '365'
         run: python fetch_prs.py
 
-      - name: Commit data.json
+      - name: Commit data
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data.json
+          git add data.json repos.json
           git diff --staged --quiet || git commit -m "chore: refresh PR data [skip ci]"
           git push
 
