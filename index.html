@@ -84,12 +84,12 @@
 
   .stats {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(3, 1fr);
     gap: 16px;
     margin-bottom: 20px;
   }
   @media (max-width: 720px) {
-    .stats { grid-template-columns: repeat(2, 1fr); }
+    .stats { grid-template-columns: 1fr; }
   }
   .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
   .stat-label {
@@ -178,7 +178,6 @@
   </div>
 
   <div class="stats">
-    <div class="stat"><div class="stat-label">Median cycle time</div><div><span id="stat-median" class="stat-value">—</span><span class="stat-unit">days</span></div></div>
     <div class="stat"><div class="stat-label">Average cycle time</div><div><span id="stat-mean" class="stat-value">—</span><span class="stat-unit">days</span></div></div>
     <div class="stat"><div class="stat-label">90th percentile</div><div><span id="stat-p90" class="stat-value">—</span><span class="stat-unit">days</span></div></div>
     <div class="stat"><div class="stat-label">PRs analyzed</div><div><span id="stat-count" class="stat-value">—</span><span class="stat-unit">merged</span></div></div>
@@ -190,12 +189,22 @@
       <div class="canvas-wrap"><canvas id="distChart"></canvas></div>
     </div>
     <div class="chart-card">
-      <h3>By author — median cycle time</h3>
+      <h3>By author — average cycle time</h3>
       <div class="canvas-wrap"><canvas id="authorChart"></canvas></div>
     </div>
     <div class="chart-card chart-wide">
-      <h3>Monthly merged PRs &amp; median cycle time</h3>
+      <h3>Monthly merged PRs &amp; average cycle time</h3>
       <div class="canvas-wrap" style="height: 280px;"><canvas id="trendChart"></canvas></div>
+    </div>
+    <div class="chart-card chart-wide">
+      <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:12px; flex-wrap:wrap;">
+        <h3 style="margin:0;">Weekly breakdown — merged PRs &amp; average cycle time</h3>
+        <div style="display:flex; align-items:center; gap:8px; font-size:13px;">
+          <label for="weekMonth" style="color:var(--muted);">Month</label>
+          <select id="weekMonth" style="padding:6px 10px; border:1px solid var(--border); border-radius:6px; font:inherit; background:white;"></select>
+        </div>
+      </div>
+      <div class="canvas-wrap" style="height: 280px;"><canvas id="weeklyChart"></canvas></div>
     </div>
   </div>
 
@@ -221,7 +230,7 @@ const ACCENT = '#3266ad';
 
 let DATA = null;       // full payload from data.json
 let FILTERED = [];     // current filtered subset
-let charts = { dist: null, author: null, trend: null };
+let charts = { dist: null, author: null, trend: null, weekly: null };
 
 // ── Load data ─────────────────────────────────────────────────────────────
 async function loadData() {
@@ -269,6 +278,7 @@ function initFilters() {
 
   document.getElementById('apply').addEventListener('click', applyFilters);
   document.getElementById('sort').addEventListener('change', renderTable);
+  document.getElementById('weekMonth').addEventListener('change', renderWeeklyChart);
 }
 
 function applyFilters() {
@@ -295,16 +305,14 @@ function quantile(sorted, q) {
 
 function renderStats() {
   if (!FILTERED.length) {
-    ['stat-median','stat-mean','stat-p90','stat-count'].forEach(id =>
+    ['stat-mean','stat-p90','stat-count'].forEach(id =>
       document.getElementById(id).textContent = '—');
     return;
   }
   const lead = FILTERED.map(p => p.lead_days).sort((a,b) => a-b);
-  const median = quantile(lead, 0.5);
   const mean = lead.reduce((a,b) => a+b, 0) / lead.length;
   const p90 = quantile(lead, 0.9);
 
-  document.getElementById('stat-median').textContent = median.toFixed(1);
   document.getElementById('stat-mean').textContent = mean.toFixed(1);
   document.getElementById('stat-p90').textContent = p90.toFixed(1);
   document.getElementById('stat-count').textContent = FILTERED.length.toLocaleString();
@@ -339,7 +347,7 @@ function renderCharts() {
     }
   });
 
-  // Author chart — median per author, top 15 by PR count
+  // Author chart — average per author, top 15 by PR count
   const byAuthor = {};
   FILTERED.forEach(p => {
     if (!byAuthor[p.author]) byAuthor[p.author] = [];
@@ -349,7 +357,7 @@ function renderCharts() {
     .map(([a, vals]) => ({
       author: a,
       count: vals.length,
-      median: quantile(vals.slice().sort((x,y) => x-y), 0.5)
+      avg: vals.reduce((s, v) => s + v, 0) / vals.length
     }))
     .sort((a,b) => b.count - a.count)
     .slice(0, 15);
@@ -358,7 +366,7 @@ function renderCharts() {
     type: 'bar',
     data: {
       labels: authorRows.map(r => r.author),
-      datasets: [{ data: authorRows.map(r => r.median), backgroundColor: ACCENT, borderRadius: 4 }]
+      datasets: [{ data: authorRows.map(r => r.avg), backgroundColor: ACCENT, borderRadius: 4 }]
     },
     options: {
       indexAxis: 'y',
@@ -367,18 +375,18 @@ function renderCharts() {
         legend: { display: false },
         tooltip: {
           callbacks: {
-            label: (ctx) => `Median ${ctx.parsed.x.toFixed(1)}d · ${authorRows[ctx.dataIndex].count} PRs`
+            label: (ctx) => `Average ${ctx.parsed.x.toFixed(1)}d · ${authorRows[ctx.dataIndex].count} PRs`
           }
         }
       },
       scales: {
-        x: { grid: { color: 'rgba(0,0,0,0.06)' }, title: { display: true, text: 'Median days' } },
+        x: { grid: { color: 'rgba(0,0,0,0.06)' }, title: { display: true, text: 'Average days' } },
         y: { grid: { display: false } }
       }
     }
   });
 
-  // Monthly trend — count + median
+  // Monthly trend — count + average
   const byMonth = {};
   FILTERED.forEach(p => {
     const m = p.merged_at.slice(0, 7); // YYYY-MM
@@ -387,14 +395,17 @@ function renderCharts() {
   });
   const months = Object.keys(byMonth).sort();
   const counts = months.map(m => byMonth[m].length);
-  const medians = months.map(m => quantile(byMonth[m].slice().sort((x,y) => x-y), 0.5));
+  const averages = months.map(m => {
+    const vals = byMonth[m];
+    return vals.reduce((s, v) => s + v, 0) / vals.length;
+  });
 
   charts.trend = new Chart(document.getElementById('trendChart'), {
     data: {
       labels: months,
       datasets: [
         { type: 'bar', label: 'PRs merged', data: counts, backgroundColor: 'rgba(50,102,173,0.25)', borderRadius: 4, yAxisID: 'y1', order: 2 },
-        { type: 'line', label: 'Median cycle time (days)', data: medians, borderColor: ACCENT, backgroundColor: ACCENT, tension: 0.3, pointRadius: 4, yAxisID: 'y', order: 1 }
+        { type: 'line', label: 'Average cycle time (days)', data: averages, borderColor: ACCENT, backgroundColor: ACCENT, tension: 0.3, pointRadius: 4, yAxisID: 'y', order: 1 }
       ]
     },
     options: {
@@ -402,7 +413,100 @@ function renderCharts() {
       plugins: { legend: { position: 'bottom' } },
       scales: {
         x: { grid: { display: false } },
-        y:  { position: 'left',  grid: { color: 'rgba(0,0,0,0.06)' }, title: { display: true, text: 'Median days' }, beginAtZero: true },
+        y:  { position: 'left',  grid: { color: 'rgba(0,0,0,0.06)' }, title: { display: true, text: 'Average days' }, beginAtZero: true },
+        y1: { position: 'right', grid: { display: false }, title: { display: true, text: 'PRs merged' }, beginAtZero: true, ticks: { precision: 0 } }
+      }
+    }
+  });
+
+  // Weekly drill-down — populate month dropdown, then render selected
+  syncMonthSelector(months);
+  renderWeeklyChart();
+}
+
+// ── Weekly drill-down ─────────────────────────────────────────────────────
+function syncMonthSelector(months) {
+  const sel = document.getElementById('weekMonth');
+  const previous = sel.value;
+  sel.innerHTML = '';
+
+  if (!months.length) return;
+
+  // Show newest month first; label as "Apr 2026" etc.
+  const ordered = months.slice().reverse();
+  ordered.forEach(m => {
+    const [y, mo] = m.split('-');
+    const label = new Date(Number(y), Number(mo) - 1, 1)
+      .toLocaleString(undefined, { month: 'short', year: 'numeric' });
+    const o = document.createElement('option');
+    o.value = m; o.textContent = label;
+    sel.appendChild(o);
+  });
+
+  // Preserve previous selection if still available; otherwise default to newest
+  sel.value = ordered.includes(previous) ? previous : ordered[0];
+}
+
+function renderWeeklyChart() {
+  if (charts.weekly) { charts.weekly.destroy(); charts.weekly = null; }
+
+  const month = document.getElementById('weekMonth').value;
+  if (!month) return;
+
+  const [y, mo] = month.split('-').map(Number);
+  const daysInMonth = new Date(y, mo, 0).getDate();
+
+  // Calendar weeks within the month: 1–7, 8–14, 15–21, 22–28, 29–end
+  const weekRanges = [];
+  for (let start = 1; start <= daysInMonth; start += 7) {
+    const end = Math.min(start + 6, daysInMonth);
+    weekRanges.push({ start, end });
+  }
+
+  const buckets = weekRanges.map(() => []);
+  FILTERED.forEach(p => {
+    if (p.merged_at.slice(0, 7) !== month) return;
+    const day = Number(p.merged_at.slice(8, 10));
+    for (let i = 0; i < weekRanges.length; i++) {
+      if (day >= weekRanges[i].start && day <= weekRanges[i].end) {
+        buckets[i].push(p.lead_days);
+        break;
+      }
+    }
+  });
+
+  const labels = weekRanges.map((r, i) => `Week ${i + 1} (${r.start}–${r.end})`);
+  const counts = buckets.map(b => b.length);
+  const averages = buckets.map(b => b.length ? b.reduce((a, c) => a + c, 0) / b.length : null);
+
+  charts.weekly = new Chart(document.getElementById('weeklyChart'), {
+    data: {
+      labels,
+      datasets: [
+        { type: 'bar',  label: 'PRs merged',                  data: counts,   backgroundColor: 'rgba(50,102,173,0.25)', borderRadius: 4, yAxisID: 'y1', order: 2 },
+        { type: 'line', label: 'Average cycle time (days)',   data: averages, borderColor: ACCENT, backgroundColor: ACCENT, tension: 0.3, pointRadius: 4, yAxisID: 'y',  order: 1, spanGaps: true }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom' },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              if (ctx.dataset.type === 'line') {
+                return ctx.parsed.y == null
+                  ? 'No PRs this week'
+                  : `Average: ${ctx.parsed.y.toFixed(1)}d`;
+              }
+              return `${ctx.parsed.y} PRs merged`;
+            }
+          }
+        }
+      },
+      scales: {
+        x:  { grid: { display: false } },
+        y:  { position: 'left',  grid: { color: 'rgba(0,0,0,0.06)' }, title: { display: true, text: 'Average days' }, beginAtZero: true },
         y1: { position: 'right', grid: { display: false }, title: { display: true, text: 'PRs merged' }, beginAtZero: true, ticks: { precision: 0 } }
       }
     }
