@@ -3,778 +3,464 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>PR Lead Time Dashboard</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<title>PR Cycle Time Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
   :root {
-    --bg: #0f0f0f;
-    --surface: #191919;
-    --surface2: #222222;
-    --border: rgba(255,255,255,0.08);
-    --border-hover: rgba(255,255,255,0.18);
-    --text: #f0f0ec;
-    --muted: #888884;
-    --accent: #c8f060;
-    --accent-dim: rgba(200,240,96,0.12);
-    --accent-text: #0f0f0f;
-    --red: #ff6b6b;
-    --amber: #ffc947;
-    --green: #c8f060;
-    --font: 'DM Sans', sans-serif;
-    --mono: 'DM Mono', monospace;
-    --radius: 10px;
+    --bg: #fafafa;
+    --panel: #ffffff;
+    --border: #e5e5e5;
+    --text: #1a1a1a;
+    --muted: #6b6b6b;
+    --accent: #3266ad;
+    --accent-soft: rgba(50, 102, 173, 0.08);
   }
-
+  * { box-sizing: border-box; }
   body {
-    font-family: var(--font);
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
     background: var(--bg);
     color: var(--text);
-    min-height: 100vh;
-    font-size: 14px;
-    line-height: 1.6;
+    line-height: 1.5;
   }
+  .container { max-width: 1200px; margin: 0 auto; padding: 32px 24px 64px; }
+  header { margin-bottom: 24px; }
+  h1 { font-size: 28px; font-weight: 600; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); font-size: 14px; }
+  .freshness { color: var(--muted); font-size: 13px; margin-top: 8px; }
 
-  header {
-    border-bottom: 1px solid var(--border);
-    padding: 1.25rem 2rem;
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-  }
-
-  .logo {
-    width: 28px; height: 28px;
-    background: var(--accent);
-    border-radius: 6px;
-    display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0;
-  }
-  .logo svg { width: 16px; height: 16px; }
-
-  header h1 {
-    font-size: 15px;
-    font-weight: 500;
-    letter-spacing: -0.01em;
-    color: var(--text);
-  }
-  header span {
-    font-size: 13px;
-    color: var(--muted);
-    font-family: var(--mono);
-  }
-
-  .main { max-width: 1100px; margin: 0 auto; padding: 2rem; }
-
-  /* Token input panel */
-  .token-panel {
-    background: var(--surface);
+  .panel {
+    background: var(--panel);
     border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 1.25rem 1.5rem;
-    margin-bottom: 1.5rem;
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    flex-wrap: wrap;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
   }
-  .token-panel label {
+  .panel-title {
     font-size: 12px;
-    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
     color: var(--muted);
-    white-space: nowrap;
+    font-weight: 600;
+    margin: 0 0 12px;
   }
-  .token-panel input {
-    flex: 1;
-    min-width: 260px;
-    background: var(--surface2);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    color: var(--text);
-    font-family: var(--mono);
-    font-size: 13px;
-    padding: 0.5rem 0.75rem;
-    outline: none;
-    transition: border-color 0.15s;
-  }
-  .token-panel input:focus { border-color: var(--accent); }
-  .token-hint { font-size: 12px; color: var(--muted); flex-basis: 100%; }
-  .token-hint a { color: var(--accent); text-decoration: none; }
-
-  /* Controls row */
-  .controls {
+  .filters {
     display: grid;
     grid-template-columns: 1fr 1fr auto;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
+    gap: 16px;
     align-items: end;
   }
-
-  .field { display: flex; flex-direction: column; gap: 0.4rem; }
+  @media (max-width: 720px) {
+    .filters { grid-template-columns: 1fr; }
+  }
   .field label {
-    font-size: 11px;
-    font-family: var(--mono);
-    color: var(--muted);
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-  }
-
-  /* Multi-select styled */
-  .multi-select {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 0.5rem;
-    cursor: pointer;
-    min-height: 42px;
-    position: relative;
-    transition: border-color 0.15s;
-  }
-  .multi-select:hover { border-color: var(--border-hover); }
-  .multi-select.open { border-color: var(--accent); }
-
-  .ms-display {
-    display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
-    min-height: 28px; padding: 2px 4px;
-    font-size: 13px; color: var(--text);
-  }
-  .ms-display.empty { color: var(--muted); }
-
-  .ms-tag {
-    background: var(--accent-dim);
-    border: 1px solid rgba(200,240,96,0.25);
-    color: var(--accent);
-    font-size: 11px;
-    font-family: var(--mono);
-    padding: 2px 8px;
-    border-radius: 4px;
-    display: flex; align-items: center; gap: 4px;
-  }
-  .ms-tag button {
-    background: none; border: none; color: var(--accent);
-    cursor: pointer; padding: 0; font-size: 13px; line-height: 1;
-  }
-
-  .ms-dropdown {
-    position: absolute; top: calc(100% + 4px); left: 0; right: 0;
-    background: var(--surface2);
-    border: 1px solid var(--border-hover);
-    border-radius: var(--radius);
-    z-index: 100;
-    overflow: hidden;
-    display: none;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-  }
-  .ms-dropdown.open { display: block; }
-
-  .ms-option {
-    padding: 0.6rem 0.85rem;
-    cursor: pointer;
-    display: flex; align-items: center; gap: 0.6rem;
-    font-size: 13px;
-    transition: background 0.1s;
-  }
-  .ms-option:hover { background: rgba(255,255,255,0.04); }
-  .ms-option.selected { color: var(--accent); }
-  .ms-option .check {
-    width: 14px; height: 14px;
-    border: 1px solid var(--border-hover);
-    border-radius: 3px;
-    flex-shrink: 0;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .ms-option.selected .check {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--accent-text);
-    font-size: 10px;
-  }
-  .ms-loading {
-    padding: 0.6rem 0.85rem;
+    display: block;
     font-size: 12px;
     color: var(--muted);
-    font-family: var(--mono);
-  }
-
-  /* Run button */
-  .run-btn {
-    background: var(--accent);
-    color: var(--accent-text);
-    border: none;
-    border-radius: var(--radius);
-    padding: 0.65rem 1.5rem;
-    font-family: var(--font);
-    font-size: 13px;
+    margin-bottom: 6px;
     font-weight: 500;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: opacity 0.15s, transform 0.1s;
-    height: 42px;
   }
-  .run-btn:hover { opacity: 0.88; }
-  .run-btn:active { transform: scale(0.97); }
-  .run-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-
-  /* Status */
-  .status-bar {
-    font-family: var(--mono);
-    font-size: 12px;
-    color: var(--muted);
-    padding: 0.75rem 0;
-    min-height: 2rem;
-  }
-  .status-bar.error { color: var(--red); }
-
-  /* Metrics */
-  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 2rem; }
-  .metric {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 1rem 1.25rem;
-  }
-  .metric-label { font-size: 11px; font-family: var(--mono); color: var(--muted); letter-spacing: 0.04em; margin-bottom: 0.4rem; }
-  .metric-value { font-size: 32px; font-weight: 300; letter-spacing: -0.02em; color: var(--text); line-height: 1; }
-  .metric-unit { font-size: 11px; color: var(--muted); margin-top: 0.25rem; }
-
-  /* Charts */
-  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 2rem; }
-  .chart-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 1.25rem;
-  }
-  .chart-card.wide { grid-column: span 2; }
-  .chart-title { font-size: 11px; font-family: var(--mono); color: var(--muted); letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 1rem; }
-  .chart-wrap { position: relative; height: 220px; }
-
-  /* Table */
-  .table-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    overflow: hidden;
-    margin-bottom: 2rem;
-  }
-  .table-header {
-    padding: 1rem 1.25rem;
-    border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 1rem; flex-wrap: wrap;
-  }
-  .table-title { font-size: 11px; font-family: var(--mono); color: var(--muted); letter-spacing: 0.05em; text-transform: uppercase; }
-  .sort-row { display: flex; align-items: center; gap: 0.5rem; }
-  .sort-row label { font-size: 11px; color: var(--muted); font-family: var(--mono); }
-  select.inline-sel {
-    background: var(--surface2);
+  select[multiple] {
+    width: 100%;
+    min-height: 90px;
+    padding: 6px;
     border: 1px solid var(--border);
     border-radius: 6px;
-    color: var(--text);
-    font-family: var(--mono);
-    font-size: 12px;
-    padding: 4px 8px;
-    outline: none;
+    font: inherit;
+    background: white;
+  }
+  select[multiple] option { padding: 4px 6px; }
+  button {
+    padding: 10px 18px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font: inherit;
+    font-weight: 500;
     cursor: pointer;
   }
-  .table-wrap { overflow-x: auto; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th {
-    text-align: left; font-weight: 400; color: var(--muted);
-    font-family: var(--mono); font-size: 11px; letter-spacing: 0.04em;
-    padding: 0.6rem 1rem; border-bottom: 1px solid var(--border);
-    white-space: nowrap;
-  }
-  td { padding: 0.55rem 1rem; border-bottom: 1px solid var(--border); color: var(--text); vertical-align: middle; }
-  tr:last-child td { border-bottom: none; }
-  tr:hover td { background: rgba(255,255,255,0.02); }
-  td a { color: var(--accent); text-decoration: none; font-family: var(--mono); font-size: 12px; }
-  td a:hover { text-decoration: underline; }
-  .repo-tag {
-    font-family: var(--mono); font-size: 10px;
-    background: var(--surface2); border: 1px solid var(--border);
-    color: var(--muted); padding: 2px 6px; border-radius: 4px;
-  }
+  button:hover { background: #2855a0; }
 
-  .badge {
-    font-family: var(--mono); font-size: 11px;
-    padding: 3px 8px; border-radius: 4px; white-space: nowrap;
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 20px;
   }
-  .badge-fast { background: rgba(200,240,96,0.12); color: var(--green); border: 1px solid rgba(200,240,96,0.2); }
-  .badge-med  { background: rgba(255,201,71,0.12); color: var(--amber); border: 1px solid rgba(255,201,71,0.2); }
-  .badge-slow { background: rgba(255,107,107,0.12); color: var(--red);   border: 1px solid rgba(255,107,107,0.2); }
+  @media (max-width: 720px) {
+    .stats { grid-template-columns: repeat(2, 1fr); }
+  }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .stat-label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--muted); font-weight: 600; margin-bottom: 6px;
+  }
+  .stat-value { font-size: 28px; font-weight: 600; }
+  .stat-unit { font-size: 13px; color: var(--muted); margin-left: 4px; }
 
-  #dashboard { display: none; }
-
-  @media(max-width: 700px) {
-    .controls { grid-template-columns: 1fr; }
-    .metrics { grid-template-columns: repeat(2, 1fr); }
+  .charts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  @media (max-width: 980px) {
     .charts { grid-template-columns: 1fr; }
-    .chart-card.wide { grid-column: span 1; }
-    .main { padding: 1rem; }
+  }
+  .chart-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .chart-card h3 { font-size: 13px; font-weight: 600; margin: 0 0 12px; color: var(--text); }
+  .chart-card .canvas-wrap { position: relative; height: 240px; }
+  .chart-wide { grid-column: 1 / -1; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th {
+    text-align: left;
+    padding: 10px 12px;
+    background: #f5f5f5;
+    border-bottom: 1px solid var(--border);
+    font-weight: 600;
+    color: var(--muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  tbody td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+  tbody tr:hover { background: #fafafa; }
+  td a { color: var(--accent); text-decoration: none; }
+  td a:hover { text-decoration: underline; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .sort-row {
+    display: flex; gap: 12px; align-items: center;
+    margin-bottom: 12px; font-size: 13px;
+  }
+  .sort-row select {
+    padding: 6px 10px; border: 1px solid var(--border);
+    border-radius: 6px; font: inherit; background: white;
+  }
+  .empty { padding: 40px; text-align: center; color: var(--muted); }
+  .loading { padding: 40px; text-align: center; color: var(--muted); }
+  .error {
+    padding: 16px;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #991b1b;
+    border-radius: 6px;
+    margin-bottom: 20px;
   }
 </style>
 </head>
 <body>
+<div class="container">
+  <header>
+    <h1>PR Cycle Time</h1>
+    <div class="subtitle">adobecom · mas · mas-pinata · milo</div>
+    <div class="freshness" id="freshness">Loading data…</div>
+  </header>
 
-<header>
-  <div class="logo">
-    <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="8" cy="4" r="2" fill="#0f0f0f"/>
-      <circle cx="4" cy="12" r="2" fill="#0f0f0f"/>
-      <circle cx="12" cy="12" r="2" fill="#0f0f0f"/>
-      <line x1="8" y1="6" x2="4" y2="10" stroke="#0f0f0f" stroke-width="1.5"/>
-      <line x1="8" y1="6" x2="12" y2="10" stroke="#0f0f0f" stroke-width="1.5"/>
-    </svg>
-  </div>
-  <h1>PR Lead Time</h1>
-  <span>adobecom</span>
-</header>
+  <div id="error" class="error" style="display:none;"></div>
 
-<div class="main">
-
-  <div class="token-panel">
-    <label>GITHUB TOKEN</label>
-    <input type="password" id="tokenInput" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx" autocomplete="off" />
-    <p class="token-hint">
-      Needs <code>repo</code> scope (or <code>public_repo</code> for public repos only). Token stays in your browser — never sent anywhere except GitHub's API.
-      <a href="https://github.com/settings/tokens/new" target="_blank">Generate one →</a>
-    </p>
-  </div>
-
-  <div class="controls">
-    <div class="field">
-      <label>Repositories</label>
-      <div class="multi-select" id="repoSelect">
-        <div class="ms-display empty" id="repoDisplay">Select repositories…</div>
-        <div class="ms-dropdown" id="repoDropdown">
-          <div class="ms-option" data-value="adobecom/mas"><div class="check"></div>adobecom/mas</div>
-          <div class="ms-option" data-value="adobecom/mas-pinata"><div class="check"></div>adobecom/mas-pinata</div>
-          <div class="ms-option" data-value="adobecom/milo"><div class="check"></div>adobecom/milo</div>
-        </div>
+  <div class="panel">
+    <div class="panel-title">Filters</div>
+    <div class="filters">
+      <div class="field">
+        <label for="repos">Repositories</label>
+        <select id="repos" multiple></select>
       </div>
-    </div>
-
-    <div class="field">
-      <label>Authors</label>
-      <div class="multi-select" id="authorSelect">
-        <div class="ms-display empty" id="authorDisplay">Select repositories first…</div>
-        <div class="ms-dropdown" id="authorDropdown">
-          <div class="ms-loading">Select repositories and load authors</div>
-        </div>
+      <div class="field">
+        <label for="authors">Authors</label>
+        <select id="authors" multiple></select>
       </div>
-    </div>
-
-    <button class="run-btn" id="runBtn" onclick="runReport()" disabled>Run report</button>
-  </div>
-
-  <div class="status-bar" id="statusBar"></div>
-
-  <div id="dashboard">
-    <div class="metrics">
-      <div class="metric"><div class="metric-label">MEDIAN LEAD TIME</div><div class="metric-value" id="mMedian">—</div><div class="metric-unit">days</div></div>
-      <div class="metric"><div class="metric-label">AVERAGE LEAD TIME</div><div class="metric-value" id="mMean">—</div><div class="metric-unit">days</div></div>
-      <div class="metric"><div class="metric-label">90TH PERCENTILE</div><div class="metric-value" id="mP90">—</div><div class="metric-unit">days</div></div>
-      <div class="metric"><div class="metric-label">PRS ANALYZED</div><div class="metric-value" id="mCount">—</div><div class="metric-unit">merged</div></div>
-    </div>
-
-    <div class="charts">
-      <div class="chart-card">
-        <div class="chart-title">Lead time distribution</div>
-        <div class="chart-wrap"><canvas id="distChart" role="img" aria-label="Histogram of PR lead times"></canvas></div>
-      </div>
-      <div class="chart-card">
-        <div class="chart-title">By author — median lead time</div>
-        <div class="chart-wrap"><canvas id="authorChart" role="img" aria-label="Median lead time per author"></canvas></div>
-      </div>
-      <div class="chart-card wide">
-        <div class="chart-title">Monthly merged PRs &amp; median lead time</div>
-        <div class="chart-wrap"><canvas id="trendChart" role="img" aria-label="Monthly PR volume and lead time trend"></canvas></div>
-      </div>
-    </div>
-
-    <div class="table-card">
-      <div class="table-header">
-        <div class="table-title">Pull requests</div>
-        <div class="sort-row">
-          <label>Sort</label>
-          <select class="inline-sel" id="sortSel" onchange="renderTable()">
-            <option value="merged_desc">Merged date ↓</option>
-            <option value="merged_asc">Merged date ↑</option>
-            <option value="lead_desc">Lead time ↓</option>
-            <option value="lead_asc">Lead time ↑</option>
-          </select>
-        </div>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Title</th>
-              <th>Repo</th>
-              <th>Author</th>
-              <th>Created</th>
-              <th>Merged</th>
-              <th>Lead time</th>
-            </tr>
-          </thead>
-          <tbody id="prTable"></tbody>
-        </table>
+      <div>
+        <button id="apply">Apply filters</button>
       </div>
     </div>
   </div>
 
+  <div class="stats">
+    <div class="stat"><div class="stat-label">Median cycle time</div><div><span id="stat-median" class="stat-value">—</span><span class="stat-unit">days</span></div></div>
+    <div class="stat"><div class="stat-label">Average cycle time</div><div><span id="stat-mean" class="stat-value">—</span><span class="stat-unit">days</span></div></div>
+    <div class="stat"><div class="stat-label">90th percentile</div><div><span id="stat-p90" class="stat-value">—</span><span class="stat-unit">days</span></div></div>
+    <div class="stat"><div class="stat-label">PRs analyzed</div><div><span id="stat-count" class="stat-value">—</span><span class="stat-unit">merged</span></div></div>
+  </div>
+
+  <div class="charts">
+    <div class="chart-card">
+      <h3>Cycle time distribution</h3>
+      <div class="canvas-wrap"><canvas id="distChart"></canvas></div>
+    </div>
+    <div class="chart-card">
+      <h3>By author — median cycle time</h3>
+      <div class="canvas-wrap"><canvas id="authorChart"></canvas></div>
+    </div>
+    <div class="chart-card chart-wide">
+      <h3>Monthly merged PRs &amp; median cycle time</h3>
+      <div class="canvas-wrap" style="height: 280px;"><canvas id="trendChart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Pull requests</div>
+    <div class="sort-row">
+      <label for="sort">Sort</label>
+      <select id="sort">
+        <option value="merged_desc">Merged date ↓</option>
+        <option value="merged_asc">Merged date ↑</option>
+        <option value="lead_desc">Cycle time ↓</option>
+        <option value="lead_asc">Cycle time ↑</option>
+      </select>
+    </div>
+    <div id="table-wrap">
+      <div class="loading">Loading…</div>
+    </div>
+  </div>
 </div>
 
 <script>
-// ─── State ───────────────────────────────────────────────────────────────────
-const state = {
-  selectedRepos: new Set(),
-  selectedAuthors: new Set(),
-  knownAuthors: [],
-  prs: [],
-};
+const ACCENT = '#3266ad';
 
-let distChart, authorChartInst, trendChart;
+let DATA = null;       // full payload from data.json
+let FILTERED = [];     // current filtered subset
+let charts = { dist: null, author: null, trend: null };
 
-// ─── Multi-select widget ──────────────────────────────────────────────────────
-function initMultiSelect(selectId, dropdownId, displayId, onChange) {
-  const wrap = document.getElementById(selectId);
-  const dropdown = document.getElementById(dropdownId);
-  const display = document.getElementById(displayId);
-
-  wrap.addEventListener('click', (e) => {
-    if (e.target.closest('.ms-tag button')) return;
-    const isOpen = dropdown.classList.contains('open');
-    closeAllDropdowns();
-    if (!isOpen) {
-      dropdown.classList.add('open');
-      wrap.classList.add('open');
-    }
-  });
-
-  dropdown.addEventListener('click', (e) => {
-    const option = e.target.closest('.ms-option');
-    if (!option) return;
-    const value = option.dataset.value;
-    if (option.classList.contains('selected')) {
-      option.classList.remove('selected');
-      option.querySelector('.check').textContent = '';
-      onChange('remove', value);
-    } else {
-      option.classList.add('selected');
-      option.querySelector('.check').textContent = '✓';
-      onChange('add', value);
-    }
-    updateDisplay(displayId, selectId === 'repoSelect' ? state.selectedRepos : state.selectedAuthors);
-  });
-}
-
-function closeAllDropdowns() {
-  document.querySelectorAll('.ms-dropdown').forEach(d => d.classList.remove('open'));
-  document.querySelectorAll('.multi-select').forEach(d => d.classList.remove('open'));
-}
-document.addEventListener('click', (e) => {
-  if (!e.target.closest('.multi-select')) closeAllDropdowns();
-});
-
-function updateDisplay(displayId, selectedSet) {
-  const display = document.getElementById(displayId);
-  if (selectedSet.size === 0) {
-    display.className = 'ms-display empty';
-    display.innerHTML = displayId === 'repoDisplay' ? 'Select repositories…' : 'All authors';
-    return;
-  }
-  display.className = 'ms-display';
-  display.innerHTML = [...selectedSet].map(v => {
-    const short = v.includes('/') ? v.split('/')[1] : v;
-    return `<span class="ms-tag">${short}<button onclick="removeSelection('${displayId}','${v}')">×</button></span>`;
-  }).join('');
-}
-
-function removeSelection(displayId, value) {
-  const isRepo = displayId === 'repoDisplay';
-  const set = isRepo ? state.selectedRepos : state.selectedAuthors;
-  set.delete(value);
-  updateDisplay(displayId, set);
-  const dropdownId = isRepo ? 'repoDropdown' : 'authorDropdown';
-  const option = document.querySelector(`#${dropdownId} [data-value="${value}"]`);
-  if (option) { option.classList.remove('selected'); option.querySelector('.check').textContent = ''; }
-  if (isRepo) onRepoChange();
-}
-
-// ─── Repo selection ───────────────────────────────────────────────────────────
-initMultiSelect('repoSelect', 'repoDropdown', 'repoDisplay', (action, value) => {
-  if (action === 'add') state.selectedRepos.add(value);
-  else state.selectedRepos.delete(value);
-  onRepoChange();
-});
-
-async function onRepoChange() {
-  state.selectedAuthors.clear();
-  updateDisplay('authorDisplay', state.selectedAuthors);
-  document.getElementById('runBtn').disabled = true;
-
-  const authDrop = document.getElementById('authorDropdown');
-  if (state.selectedRepos.size === 0) {
-    authDrop.innerHTML = '<div class="ms-loading">Select repositories and load authors</div>';
-    document.getElementById('authorDisplay').innerHTML = 'Select repositories first…';
-    document.getElementById('authorDisplay').className = 'ms-display empty';
-    return;
-  }
-
-  const token = document.getElementById('tokenInput').value.trim();
-  if (!token) {
-    authDrop.innerHTML = '<div class="ms-loading">Enter a GitHub token above first</div>';
-    return;
-  }
-
-  authDrop.innerHTML = '<div class="ms-loading">Loading authors…</div>';
-  document.getElementById('authorDisplay').innerHTML = 'Loading…';
-  document.getElementById('authorDisplay').className = 'ms-display empty';
-
+// ── Load data ─────────────────────────────────────────────────────────────
+async function loadData() {
   try {
-    const authors = await fetchAuthors(token, [...state.selectedRepos]);
-    state.knownAuthors = authors;
-    if (authors.length === 0) {
-      authDrop.innerHTML = '<div class="ms-loading">No merged PRs found</div>';
-    } else {
-      authDrop.innerHTML = authors.map(a =>
-        `<div class="ms-option" data-value="${a}"><div class="check"></div>${a}</div>`
-      ).join('');
-      document.getElementById('authorDisplay').innerHTML = 'All authors';
-      document.getElementById('authorDisplay').className = 'ms-display empty';
-    }
-    document.getElementById('runBtn').disabled = false;
-  } catch(e) {
-    authDrop.innerHTML = `<div class="ms-loading" style="color:var(--red)">Error: ${e.message}</div>`;
+    const resp = await fetch('data.json?_=' + Date.now());
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    DATA = await resp.json();
+    initFilters();
+    applyFilters();
+    showFreshness();
+  } catch (e) {
+    document.getElementById('freshness').textContent = '';
+    const err = document.getElementById('error');
+    err.style.display = 'block';
+    err.textContent = 'Failed to load data.json — ' + e.message
+      + '. The daily refresh may not have run yet. Check the Actions tab in the repo.';
+    document.getElementById('table-wrap').innerHTML = '';
   }
 }
 
-initMultiSelect('authorSelect', 'authorDropdown', 'authorDisplay', (action, value) => {
-  if (action === 'add') state.selectedAuthors.add(value);
-  else state.selectedAuthors.delete(value);
-});
+function showFreshness() {
+  const dt = new Date(DATA.generated_at);
+  const opts = { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' };
+  document.getElementById('freshness').textContent =
+    'Data refreshed: ' + dt.toLocaleString(undefined, opts)
+    + ' · ' + DATA.prs.length + ' merged PRs · last ' + DATA.max_age_days + ' days';
+}
 
-// ─── GitHub API ───────────────────────────────────────────────────────────────
-async function ghFetch(url, token) {
-  const res = await fetch(url, {
-    headers: { Authorization: `token ${token}`, Accept: 'application/vnd.github.v3+json' }
+// ── Filters ───────────────────────────────────────────────────────────────
+function initFilters() {
+  const repoSel = document.getElementById('repos');
+  DATA.repos.forEach(r => {
+    const o = document.createElement('option');
+    o.value = r; o.textContent = r; o.selected = true;
+    repoSel.appendChild(o);
   });
-  if (!res.ok) throw new Error(`GitHub API ${res.status}: ${res.statusText}`);
-  return res.json();
+
+  const authorSel = document.getElementById('authors');
+  const authors = [...new Set(DATA.prs.map(p => p.author))].sort();
+  authors.forEach(a => {
+    const o = document.createElement('option');
+    o.value = a; o.textContent = a; o.selected = true;
+    authorSel.appendChild(o);
+  });
+
+  document.getElementById('apply').addEventListener('click', applyFilters);
+  document.getElementById('sort').addEventListener('change', renderTable);
 }
 
-async function fetchAuthors(token, repos) {
-  const authorSet = new Set();
-  for (const repo of repos) {
-    const data = await ghFetch(
-      `https://api.github.com/repos/${repo}/pulls?state=closed&per_page=100&page=1`, token
-    );
-    data.filter(p => p.merged_at).forEach(p => authorSet.add(p.user.login));
-  }
-  return [...authorSet].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
-}
+function applyFilters() {
+  const repos = [...document.getElementById('repos').selectedOptions].map(o => o.value);
+  const authors = [...document.getElementById('authors').selectedOptions].map(o => o.value);
+  const repoSet = new Set(repos);
+  const authorSet = new Set(authors);
 
-async function fetchPRs(token, repos, authors) {
-  const all = [];
-  for (const repo of repos) {
-    let page = 1;
-    while (true) {
-      setStatus(`Fetching ${repo} page ${page}…`);
-      const data = await ghFetch(
-        `https://api.github.com/repos/${repo}/pulls?state=closed&per_page=100&page=${page}`, token
-      );
-      if (!data.length) break;
-      for (const pr of data) {
-        if (!pr.merged_at) continue;
-        if (authors.size > 0 && !authors.has(pr.user.login)) continue;
-        const created = new Date(pr.created_at);
-        const merged = new Date(pr.merged_at);
-        const lead_days = (merged - created) / 86400000;
-        all.push({
-          number: pr.number,
-          title: pr.title,
-          url: pr.html_url,
-          repo,
-          author: pr.user.login,
-          created: pr.created_at,
-          merged: pr.merged_at,
-          lead_days: Math.round(lead_days * 10) / 10,
-        });
-      }
-      if (data.length < 100) break;
-      page++;
-    }
-  }
-  return all;
-}
+  FILTERED = DATA.prs.filter(p => repoSet.has(p.repo) && authorSet.has(p.author));
 
-// ─── Run report ───────────────────────────────────────────────────────────────
-async function runReport() {
-  const token = document.getElementById('tokenInput').value.trim();
-  if (!token) { setStatus('Enter a GitHub token first.', true); return; }
-  if (state.selectedRepos.size === 0) { setStatus('Select at least one repository.', true); return; }
-
-  document.getElementById('runBtn').disabled = true;
-  document.getElementById('dashboard').style.display = 'none';
-  setStatus('Fetching PRs…');
-
-  try {
-    state.prs = await fetchPRs(token, [...state.selectedRepos], state.selectedAuthors);
-    if (state.prs.length === 0) { setStatus('No merged PRs found for the selected filters.', true); document.getElementById('runBtn').disabled = false; return; }
-    setStatus(`Loaded ${state.prs.length} merged PRs.`);
-    render();
-  } catch(e) {
-    setStatus('Error: ' + e.message, true);
-  }
-  document.getElementById('runBtn').disabled = false;
-}
-
-function setStatus(msg, isError = false) {
-  const el = document.getElementById('statusBar');
-  el.textContent = msg;
-  el.className = 'status-bar' + (isError ? ' error' : '');
-}
-
-// ─── Render ───────────────────────────────────────────────────────────────────
-function pct(arr, p) {
-  const s = [...arr].sort((a,b) => a-b);
-  return s[Math.max(0, Math.ceil(s.length * p / 100) - 1)];
-}
-function median(arr) { return pct(arr, 50); }
-function mean(arr) { return arr.reduce((a,b) => a+b, 0) / arr.length; }
-function fmtDate(iso) {
-  return new Date(iso).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric' });
-}
-
-function render() {
-  const leads = state.prs.map(p => p.lead_days);
-  document.getElementById('mMedian').textContent = Math.round(median(leads) * 10) / 10;
-  document.getElementById('mMean').textContent = Math.round(mean(leads) * 10) / 10;
-  document.getElementById('mP90').textContent = Math.round(pct(leads, 90) * 10) / 10;
-  document.getElementById('mCount').textContent = state.prs.length;
-
-  renderDist(leads);
-  renderAuthorChart();
-  renderTrend();
+  renderStats();
+  renderCharts();
   renderTable();
-
-  document.getElementById('dashboard').style.display = 'block';
 }
 
-function renderDist(leads) {
-  const buckets = [[0,0.25,'<6h'],[0.25,1,'6h–1d'],[1,3,'1–3d'],[3,7,'3–7d'],[7,14,'7–14d'],[14,30,'14–30d'],[30,1e9,'30d+']];
-  const labels = buckets.map(b => b[2]);
-  const counts = buckets.map(([lo,hi]) => leads.filter(l => l >= lo && l < hi).length);
-  if (distChart) distChart.destroy();
-  distChart = new Chart(document.getElementById('distChart'), {
+// ── Stats ─────────────────────────────────────────────────────────────────
+function quantile(sorted, q) {
+  if (!sorted.length) return null;
+  const pos = (sorted.length - 1) * q;
+  const lo = Math.floor(pos), hi = Math.ceil(pos);
+  if (lo === hi) return sorted[lo];
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (pos - lo);
+}
+
+function renderStats() {
+  if (!FILTERED.length) {
+    ['stat-median','stat-mean','stat-p90','stat-count'].forEach(id =>
+      document.getElementById(id).textContent = '—');
+    return;
+  }
+  const lead = FILTERED.map(p => p.lead_days).sort((a,b) => a-b);
+  const median = quantile(lead, 0.5);
+  const mean = lead.reduce((a,b) => a+b, 0) / lead.length;
+  const p90 = quantile(lead, 0.9);
+
+  document.getElementById('stat-median').textContent = median.toFixed(1);
+  document.getElementById('stat-mean').textContent = mean.toFixed(1);
+  document.getElementById('stat-p90').textContent = p90.toFixed(1);
+  document.getElementById('stat-count').textContent = FILTERED.length.toLocaleString();
+}
+
+// ── Charts ────────────────────────────────────────────────────────────────
+function renderCharts() {
+  Object.values(charts).forEach(c => c && c.destroy());
+
+  // Distribution buckets (days)
+  const bucketEdges = [0, 1, 2, 3, 5, 7, 14, 30, 60, Infinity];
+  const bucketLabels = ['<1d','1–2','2–3','3–5','5–7','1–2w','2–4w','1–2m','>2m'];
+  const buckets = bucketLabels.map(() => 0);
+  FILTERED.forEach(p => {
+    for (let i = 0; i < bucketEdges.length - 1; i++) {
+      if (p.lead_days >= bucketEdges[i] && p.lead_days < bucketEdges[i+1]) {
+        buckets[i]++; break;
+      }
+    }
+  });
+
+  charts.dist = new Chart(document.getElementById('distChart'), {
     type: 'bar',
-    data: { labels, datasets: [{ data: counts, backgroundColor: 'rgba(200,240,96,0.7)', borderRadius: 4, borderSkipped: false }] },
+    data: { labels: bucketLabels, datasets: [{ data: buckets, backgroundColor: ACCENT, borderRadius: 4 }]},
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false } },
       scales: {
-        x: { grid: { display: false }, ticks: { color: '#666', font: { size: 11, family: 'DM Mono' } } },
-        y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#666', font: { size: 11 } } }
+        x: { grid: { display: false } },
+        y: { grid: { color: 'rgba(0,0,0,0.06)' }, beginAtZero: true, ticks: { precision: 0 } }
       }
     }
   });
-}
 
-function renderAuthorChart() {
+  // Author chart — median per author, top 15 by PR count
   const byAuthor = {};
-  state.prs.forEach(p => {
+  FILTERED.forEach(p => {
     if (!byAuthor[p.author]) byAuthor[p.author] = [];
     byAuthor[p.author].push(p.lead_days);
   });
-  const sorted = Object.entries(byAuthor)
-    .map(([a, leads]) => ({ author: a, med: Math.round(median(leads) * 10) / 10, count: leads.length }))
-    .sort((a,b) => b.count - a.count).slice(0, 12);
-  const labels = sorted.map(a => a.author);
-  const data = sorted.map(a => a.med);
-  if (authorChartInst) authorChartInst.destroy();
-  authorChartInst = new Chart(document.getElementById('authorChart'), {
+  const authorRows = Object.entries(byAuthor)
+    .map(([a, vals]) => ({
+      author: a,
+      count: vals.length,
+      median: quantile(vals.slice().sort((x,y) => x-y), 0.5)
+    }))
+    .sort((a,b) => b.count - a.count)
+    .slice(0, 15);
+
+  charts.author = new Chart(document.getElementById('authorChart'), {
     type: 'bar',
-    data: { labels, datasets: [{ data, backgroundColor: 'rgba(200,240,96,0.5)', borderRadius: 4, borderSkipped: false }] },
+    data: {
+      labels: authorRows.map(r => r.author),
+      datasets: [{ data: authorRows.map(r => r.median), backgroundColor: ACCENT, borderRadius: 4 }]
+    },
     options: {
       indexAxis: 'y',
       responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => `Median ${ctx.parsed.x.toFixed(1)}d · ${authorRows[ctx.dataIndex].count} PRs`
+          }
+        }
+      },
       scales: {
-        x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#666', font: { size: 11 } } },
-        y: { grid: { display: false }, ticks: { color: '#aaa', font: { size: 11, family: 'DM Mono' } } }
+        x: { grid: { color: 'rgba(0,0,0,0.06)' }, title: { display: true, text: 'Median days' } },
+        y: { grid: { display: false } }
       }
     }
   });
-}
 
-function renderTrend() {
+  // Monthly trend — count + median
   const byMonth = {};
-  state.prs.forEach(p => {
-    const m = p.merged.slice(0,7);
+  FILTERED.forEach(p => {
+    const m = p.merged_at.slice(0, 7); // YYYY-MM
     if (!byMonth[m]) byMonth[m] = [];
     byMonth[m].push(p.lead_days);
   });
   const months = Object.keys(byMonth).sort();
-  const medians = months.map(m => Math.round(median(byMonth[m]) * 10) / 10);
   const counts = months.map(m => byMonth[m].length);
-  if (trendChart) trendChart.destroy();
-  trendChart = new Chart(document.getElementById('trendChart'), {
-    type: 'bar',
+  const medians = months.map(m => quantile(byMonth[m].slice().sort((x,y) => x-y), 0.5));
+
+  charts.trend = new Chart(document.getElementById('trendChart'), {
     data: {
       labels: months,
       datasets: [
-        { type: 'bar', label: 'PRs merged', data: counts, backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 3, yAxisID: 'y1' },
-        { type: 'line', label: 'Median days', data: medians, borderColor: '#c8f060', backgroundColor: 'transparent', tension: 0.35, pointRadius: 4, pointBackgroundColor: '#c8f060', yAxisID: 'y2', borderWidth: 2 }
+        { type: 'bar', label: 'PRs merged', data: counts, backgroundColor: 'rgba(50,102,173,0.25)', borderRadius: 4, yAxisID: 'y1', order: 2 },
+        { type: 'line', label: 'Median cycle time (days)', data: medians, borderColor: ACCENT, backgroundColor: ACCENT, tension: 0.3, pointRadius: 4, yAxisID: 'y', order: 1 }
       ]
     },
     options: {
       responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: true, position: 'top', labels: { color: '#666', boxWidth: 10, font: { size: 11, family: 'DM Mono' } } } },
+      plugins: { legend: { position: 'bottom' } },
       scales: {
-        x: { grid: { display: false }, ticks: { color: '#666', font: { size: 11, family: 'DM Mono' }, maxRotation: 45 } },
-        y1: { position: 'left', grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#555', font: { size: 11 } } },
-        y2: { position: 'right', grid: { display: false }, ticks: { color: '#888', font: { size: 11 } } }
+        x: { grid: { display: false } },
+        y:  { position: 'left',  grid: { color: 'rgba(0,0,0,0.06)' }, title: { display: true, text: 'Median days' }, beginAtZero: true },
+        y1: { position: 'right', grid: { display: false }, title: { display: true, text: 'PRs merged' }, beginAtZero: true, ticks: { precision: 0 } }
       }
     }
   });
 }
 
-function badge(d) {
-  if (d <= 1)  return `<span class="badge badge-fast">${d}d</span>`;
-  if (d <= 7)  return `<span class="badge badge-med">${d}d</span>`;
-  return `<span class="badge badge-slow">${d}d</span>`;
-}
-
+// ── Table ─────────────────────────────────────────────────────────────────
 function renderTable() {
-  const sort = document.getElementById('sortSel').value;
-  const sorted = [...state.prs].sort((a,b) => {
-    if (sort === 'merged_desc') return new Date(b.merged) - new Date(a.merged);
-    if (sort === 'merged_asc')  return new Date(a.merged) - new Date(b.merged);
-    if (sort === 'lead_desc')   return b.lead_days - a.lead_days;
-    return a.lead_days - b.lead_days;
-  });
-  document.getElementById('prTable').innerHTML = sorted.slice(0, 150).map(p => `
-    <tr>
-      <td><a href="${p.url}" target="_blank">#${p.number}</a></td>
-      <td style="max-width:340px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${p.title.slice(0,70)}${p.title.length>70?'…':''}</td>
-      <td><span class="repo-tag">${p.repo.split('/')[1]}</span></td>
-      <td style="font-family:var(--mono);font-size:12px;color:var(--muted)">${p.author}</td>
-      <td style="font-family:var(--mono);font-size:12px;color:var(--muted);white-space:nowrap">${fmtDate(p.created)}</td>
-      <td style="font-family:var(--mono);font-size:12px;white-space:nowrap">${fmtDate(p.merged)}</td>
-      <td>${badge(p.lead_days)}</td>
-    </tr>`).join('');
+  const sort = document.getElementById('sort').value;
+  const rows = FILTERED.slice();
+  const cmp = {
+    merged_desc: (a,b) => b.merged_at.localeCompare(a.merged_at),
+    merged_asc:  (a,b) => a.merged_at.localeCompare(b.merged_at),
+    lead_desc:   (a,b) => b.lead_days - a.lead_days,
+    lead_asc:    (a,b) => a.lead_days - b.lead_days,
+  }[sort];
+  rows.sort(cmp);
+
+  const wrap = document.getElementById('table-wrap');
+  if (!rows.length) {
+    wrap.innerHTML = '<div class="empty">No PRs match the current filters.</div>';
+    return;
+  }
+
+  const top = rows.slice(0, 200); // cap rendered rows
+  const html = `
+    <table>
+      <thead>
+        <tr>
+          <th>#</th><th>Title</th><th>Repo</th><th>Author</th>
+          <th>Created</th><th>Merged</th><th class="num">Cycle time</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${top.map(p => `
+          <tr>
+            <td><a href="${p.url}" target="_blank" rel="noopener">#${p.number}</a></td>
+            <td>${escapeHtml(p.title)}</td>
+            <td>${p.repo.split('/')[1]}</td>
+            <td>${escapeHtml(p.author)}</td>
+            <td>${p.created_at.slice(0,10)}</td>
+            <td>${p.merged_at.slice(0,10)}</td>
+            <td class="num">${p.lead_days.toFixed(1)}d</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    ${rows.length > 200 ? `<div class="empty" style="padding: 16px;">Showing 200 of ${rows.length} PRs</div>` : ''}
+  `;
+  wrap.innerHTML = html;
 }
 
-// Reload authors when token is entered
-document.getElementById('tokenInput').addEventListener('blur', () => {
-  if (state.selectedRepos.size > 0) onRepoChange();
-});
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+loadData();
 </script>
 </body>
 </html>
