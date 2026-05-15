@@ -1,33 +1,36 @@
 """
 fetch_prs.py
 ────────────
-Fetches merged pull requests from the configured repos and writes data.json
-to the repo root. Run by .github/workflows/refresh.yml.
+Refreshes the data files served by the dashboard. Run by GitHub Actions.
 
-Output schema (data.json):
-{
-  "generated_at": "2026-05-12T06:00:00Z",
-  "repos": ["adobecom/mas", "adobecom/mas-pinata", "adobecom/milo"],
-  "prs": [
-    {
-      "number": 123,
-      "title": "...",
-      "repo": "adobecom/mas",
-      "author": "octocat",
-      "created_at": "2026-04-01T10:00:00Z",
-      "merged_at": "2026-04-03T14:30:00Z",
-      "lead_days": 2.19,
-      "url": "https://github.com/..."
-    },
-    ...
-  ]
-}
+Two outputs:
+
+  repos.json — full list of the org's repos, for the dropdown
+  {
+    "generated_at": "2026-05-12T06:00:00Z",
+    "org": "adobecom",
+    "repos": ["mas", "mas-pinata", "milo", ...]   # name only, sorted
+  }
+
+  data.json — PR data for the auto-curated tracked set
+  {
+    "generated_at": "2026-05-12T06:00:00Z",
+    "org": "adobecom",
+    "tracked_repos": ["adobecom/mas", "adobecom/mas-pinata", ...],
+    "tracked_criterion": "Merged PR within last 30 days",
+    "max_age_days": 365,
+    "prs": [ { number, title, repo, author, created_at, merged_at, lead_days, url }, ... ]
+  }
 
 Environment variables:
-  GITHUB_TOKEN — provided automatically by GitHub Actions
-  REPOS        — comma-separated "owner/repo" list (set in workflow env)
-  MAX_PRS      — per-repo cap on merged PRs to fetch (default 500)
-  MAX_AGE_DAYS — only include PRs merged within this many days (default 365)
+  GITHUB_TOKEN        — provided automatically by GitHub Actions
+  ORG                 — GitHub org to scan (default: "adobecom")
+  TRACKED_WINDOW_DAYS — a repo is tracked if it had a merged PR within this
+                        window (default 30)
+  MAX_AGE_DAYS        — PRs older than this are excluded (default 365)
+  MAX_PRS             — per-repo cap on merged PRs to fetch (default 500)
+  INCLUDE_FORKS       — "true" to include forks; default false
+  INCLUDE_ARCHIVED    — "true" to include archived repos; default false
 """
 
 import os
@@ -42,12 +45,12 @@ except ImportError:
     sys.exit(1)
 
 TOKEN = os.environ.get("GITHUB_TOKEN", "")
-REPOS = [r.strip() for r in os.environ.get(
-    "REPOS",
-    "adobecom/mas,adobecom/mas-pinata,adobecom/milo"
-).split(",") if r.strip()]
-MAX_PRS = int(os.environ.get("MAX_PRS", "500"))
+ORG = os.environ.get("ORG", "adobecom").strip()
+TRACKED_WINDOW_DAYS = int(os.environ.get("TRACKED_WINDOW_DAYS", "30"))
 MAX_AGE_DAYS = int(os.environ.get("MAX_AGE_DAYS", "365"))
+MAX_PRS = int(os.environ.get("MAX_PRS", "500"))
+INCLUDE_FORKS = os.environ.get("INCLUDE_FORKS", "false").lower() == "true"
+INCLUDE_ARCHIVED = os.environ.get("INCLUDE_ARCHIVED", "false").lower() == "true"
 
 if not TOKEN:
     print("ERROR: GITHUB_TOKEN not set.")
@@ -60,37 +63,109 @@ HEADERS = {
 }
 
 NOW = datetime.now(timezone.utc)
-CUTOFF = NOW - timedelta(days=MAX_AGE_DAYS)
+PR_CUTOFF = NOW - timedelta(days=MAX_AGE_DAYS)
+TRACKED_CUTOFF = NOW - timedelta(days=TRACKED_WINDOW_DAYS)
 
 
 def parse_dt(s):
     if not s:
         return None
-    # GitHub returns Zulu time: "2026-04-01T10:00:00Z"
     return datetime.fromisoformat(s.replace("Z", "+00:00"))
 
 
-def fetch_merged_prs(repo):
-    """Fetch merged PRs for one repo, newest first, up to MAX_PRS or CUTOFF."""
-    print(f"  Fetching {repo} …", flush=True)
+def get_json(url, params=None):
+    resp = requests.get(url, headers=HEADERS, params=params, timeout=30)
+    if resp.status_code == 404:
+        return None
+    resp.raise_for_status()
+    return resp.json()
+
+
+def list_org_repos(org):
+    """All public repos in the org. Returns list of repo dicts."""
+    print(f"Listing repos for {org}…", flush=True)
     out = []
     page = 1
-    per_page = 100
+    while True:
+        params = {"per_page": 100, "page": page, "type": "public", "sort": "full_name"}
+        batch = get_json(f"https://api.github.com/orgs/{org}/repos", params=params)
+        if not batch:
+            break
+        out.extend(batch)
+        if len(batch) < 100:
+            break
+        page += 1
+    print(f"  {len(out)} repos returned")
+    return out
+
+
+def filter_repos(repos):
+    """Apply fork/archived filters."""
+    kept = []
+    for r in repos:
+        if not INCLUDE_FORKS and r.get("fork"):
+            continue
+        if not INCLUDE_ARCHIVED and r.get("archived"):
+            continue
+        kept.append(r)
+    return kept
+
+
+def most_recent_merge(full_name):
+    """Cheap probe: datetime of the most recently merged PR, or None.
+
+    Walks closed PRs sorted by updated desc; first one with a merged_at wins.
+    Scans only the first page (100 PRs) — sufficient for any repo with
+    recent activity. Repos with no merge in their last 100 closed PRs are
+    inactive enough to drop from tracking.
+    """
+    url = f"https://api.github.com/repos/{full_name}/pulls"
+    params = {"state": "closed", "sort": "updated", "direction": "desc", "per_page": 100}
+    batch = get_json(url, params=params)
+    if not batch:
+        return None
+    for pr in batch:
+        merged_at = parse_dt(pr.get("merged_at"))
+        if merged_at:
+            return merged_at
+    return None
+
+
+def pick_tracked_repos(repos):
+    """Return repo dicts that had a merged PR within the window."""
+    print(f"Checking which repos had a merge in the last {TRACKED_WINDOW_DAYS} days…", flush=True)
+    tracked = []
+    for r in repos:
+        full = r["full_name"]
+        try:
+            last = most_recent_merge(full)
+        except requests.HTTPError as e:
+            print(f"  WARN: {full} probe failed ({e}) — skipping")
+            continue
+        if last and last >= TRACKED_CUTOFF:
+            print(f"  ✓ {full}  (last merge {last.date()})")
+            tracked.append(r)
+    print(f"\n  {len(tracked)} repos qualify as tracked")
+    return tracked
+
+
+def fetch_merged_prs(full_name):
+    """Fetch merged PRs for one repo, newest first, up to MAX_PRS or PR_CUTOFF."""
+    print(f"  Fetching {full_name} …", flush=True)
+    out = []
+    page = 1
     while len(out) < MAX_PRS:
-        url = f"https://api.github.com/repos/{repo}/pulls"
+        url = f"https://api.github.com/repos/{full_name}/pulls"
         params = {
             "state": "closed",
             "sort": "updated",
             "direction": "desc",
-            "per_page": per_page,
+            "per_page": 100,
             "page": page,
         }
-        resp = requests.get(url, headers=HEADERS, params=params, timeout=30)
-        if resp.status_code == 404:
-            print(f"    WARN: {repo} returned 404 — skipping")
+        batch = get_json(url, params=params)
+        if batch is None:
             return []
-        resp.raise_for_status()
-        batch = resp.json()
         if not batch:
             break
 
@@ -98,20 +173,16 @@ def fetch_merged_prs(repo):
         for pr in batch:
             merged_at = parse_dt(pr.get("merged_at"))
             if not merged_at:
-                continue  # closed without merge — skip
-            if merged_at < CUTOFF:
-                # Sorted by updated desc, so we *might* still see older merges
-                # that were recently updated; keep going through this page,
-                # but signal stop after the loop.
+                continue
+            if merged_at < PR_CUTOFF:
                 stop = True
                 continue
             created_at = parse_dt(pr["created_at"])
-            lead_seconds = (merged_at - created_at).total_seconds()
-            lead_days = round(lead_seconds / 86400, 3)
+            lead_days = round((merged_at - created_at).total_seconds() / 86400, 3)
             out.append({
                 "number": pr["number"],
                 "title": pr["title"],
-                "repo": repo,
+                "repo": full_name,
                 "author": (pr.get("user") or {}).get("login", "unknown"),
                 "created_at": pr["created_at"],
                 "merged_at": pr["merged_at"],
@@ -122,7 +193,7 @@ def fetch_merged_prs(repo):
                 stop = True
                 break
 
-        if stop or len(batch) < per_page:
+        if stop or len(batch) < 100:
             break
         page += 1
 
@@ -131,29 +202,46 @@ def fetch_merged_prs(repo):
 
 
 def main():
-    print(f"Refreshing PR data at {NOW.isoformat()}")
-    print(f"Repos: {REPOS}")
-    print(f"Cutoff: merged within {MAX_AGE_DAYS} days, max {MAX_PRS}/repo")
+    print(f"Refreshing data at {NOW.isoformat()}")
+    print(f"Org: {ORG}")
+    print(f"Tracked criterion: merge within last {TRACKED_WINDOW_DAYS} days")
+    print(f"PR window: last {MAX_AGE_DAYS} days, cap {MAX_PRS}/repo\n")
 
+    all_repos = list_org_repos(ORG)
+    all_repos = filter_repos(all_repos)
+
+    # Write the full repo list right away (dropdown only needs names)
+    repos_payload = {
+        "generated_at": NOW.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "org": ORG,
+        "repos": sorted(r["name"] for r in all_repos),
+    }
+    with open("repos.json", "w") as f:
+        json.dump(repos_payload, f, separators=(",", ":"))
+    print(f"\nWrote repos.json — {len(repos_payload['repos'])} repos\n")
+
+    tracked = pick_tracked_repos(all_repos)
+
+    print("\nFetching PR data for tracked repos…")
     all_prs = []
-    for repo in REPOS:
-        all_prs.extend(fetch_merged_prs(repo))
+    for r in tracked:
+        all_prs.extend(fetch_merged_prs(r["full_name"]))
 
-    # Sort newest merged first for stable output
     all_prs.sort(key=lambda p: p["merged_at"], reverse=True)
 
-    payload = {
+    data_payload = {
         "generated_at": NOW.strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "repos": REPOS,
+        "org": ORG,
+        "tracked_repos": sorted(r["full_name"] for r in tracked),
+        "tracked_criterion": f"Merged PR within last {TRACKED_WINDOW_DAYS} days",
         "max_age_days": MAX_AGE_DAYS,
         "max_prs_per_repo": MAX_PRS,
         "prs": all_prs,
     }
-
     with open("data.json", "w") as f:
-        json.dump(payload, f, separators=(",", ":"))
+        json.dump(data_payload, f, separators=(",", ":"))
 
-    print(f"\nWrote data.json — {len(all_prs)} PRs total")
+    print(f"\nWrote data.json — {len(all_prs)} PRs across {len(tracked)} tracked repos")
 
 
 if __name__ == "__main__":
