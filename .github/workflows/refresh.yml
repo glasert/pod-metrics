@@ -1,0 +1,61 @@
+name: Refresh PR data
+
+on:
+  schedule:
+    # Daily at 06:00 UTC
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'index.html'
+      - 'fetch_prs.py'
+      - '.github/workflows/refresh.yml'
+
+permissions:
+  contents: write   # commit data.json back to repo
+  pages: write      # deploy to GitHub Pages
+  id-token: write   # Pages OIDC
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Fetch PR data
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOS: 'adobecom/mas,adobecom/mas-pinata,adobecom/milo'
+          MAX_PRS: '500'
+          MAX_AGE_DAYS: '365'
+        run: python fetch_prs.py
+
+      - name: Commit data.json
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data.json
+          git diff --staged --quiet || git commit -m "chore: refresh PR data [skip ci]"
+          git push
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
