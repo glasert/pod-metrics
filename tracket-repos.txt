@@ -1,0 +1,18 @@
+# Repositories tracked by the PR cycle time dashboard.
+# One repo per line. Owner is inferred from the ORG env var in refresh.yml.
+# Lines starting with # and blank lines are ignored.
+#
+# To add a repo: append its name on a new line and commit.
+# To stop tracking: delete the line.
+#
+# Note: only public repos in the adobecom org are accessible from this
+# (public, personal) GitHub Pages deployment. Internal Adobe repos
+# (e.g. mas-pinata, milo-pinata) need to be hosted on Adobe GHE — see
+# the conversation history for the migration plan.
+#
+# Active list:
+
+mas
+milo
+mas-pinata
+milo-pinata
