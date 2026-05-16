@@ -44,12 +44,20 @@
     font-weight: 600;
     margin: 0 0 12px;
   }
-  .repo-picker {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
+  .picker-row {
+    display: grid;
+    grid-template-columns: 1fr 220px;
+    gap: 16px;
+    align-items: end;
+    margin-bottom: 8px;
   }
-  .repo-picker input {
+  @media (max-width: 720px) {
+    .picker-row { grid-template-columns: 1fr; }
+    .picker-field-narrow { max-width: none; }
+  }
+  .picker-field { display: flex; flex-direction: column; }
+  .picker-field input,
+  .picker-field select {
     width: 100%;
     padding: 10px 12px;
     border: 1px solid var(--border);
@@ -57,7 +65,8 @@
     font: inherit;
     background: white;
   }
-  .repo-picker input:focus {
+  .picker-field input:focus,
+  .picker-field select:focus {
     outline: none;
     border-color: var(--accent);
     box-shadow: 0 0 0 3px var(--accent-soft);
@@ -148,13 +157,25 @@
   <div id="error" class="error" style="display:none;"></div>
 
   <div class="panel">
-    <div class="panel-title">Repository</div>
-    <div class="repo-picker">
-      <input id="repo" list="repo-options" autocomplete="off"
-             placeholder="Pick a tracked repository…" spellcheck="false">
-      <datalist id="repo-options"></datalist>
-      <div id="repo-status" class="repo-status"></div>
+    <div class="picker-row">
+      <div class="picker-field">
+        <div class="panel-title" style="margin-bottom:8px;">Repository</div>
+        <input id="repo" list="repo-options" autocomplete="off"
+               placeholder="Pick a tracked repository…" spellcheck="false">
+        <datalist id="repo-options"></datalist>
+      </div>
+      <div class="picker-field picker-field-narrow">
+        <div class="panel-title" style="margin-bottom:8px;">Time range</div>
+        <select id="timeRange">
+          <option value="28">Last 4 weeks</option>
+          <option value="42">Last 6 weeks</option>
+          <option value="56">Last 8 weeks</option>
+          <option value="84" selected>Last 12 weeks</option>
+          <option value="all">All available</option>
+        </select>
+      </div>
     </div>
+    <div id="repo-status" class="repo-status"></div>
   </div>
 
   <div class="stats">
@@ -257,13 +278,14 @@ function populateRepoDropdown() {
 function wireInteractions() {
   const input = document.getElementById('repo');
   // 'change' fires when the user picks from the dropdown or commits typing
-  input.addEventListener('change', onRepoChange);
+  input.addEventListener('change', applyFilters);
   // 'input' fires on every keystroke — let it through so picking from
   // the datalist (which fires input then change) feels instant
   input.addEventListener('input', (e) => {
     // If the typed value exactly matches an option, treat as a selection
-    if (REPOS_INDEX.repos.includes(e.target.value.trim())) onRepoChange();
+    if (REPOS_INDEX.repos.includes(e.target.value.trim())) applyFilters();
   });
+  document.getElementById('timeRange').addEventListener('change', applyFilters);
   document.getElementById('sort').addEventListener('change', renderTable);
   document.getElementById('weekMonth').addEventListener('change', renderWeeklyChart);
 }
@@ -277,10 +299,23 @@ function setInitialRepo() {
   }
   const name = first.split('/')[1];
   document.getElementById('repo').value = name;
-  onRepoChange();
+  applyFilters();
 }
 
-function onRepoChange() {
+function getTimeRangeDays() {
+  const v = document.getElementById('timeRange').value;
+  return v === 'all' ? null : Number(v);
+}
+
+function getTimeRangeLabel() {
+  const v = document.getElementById('timeRange').value;
+  if (v === 'all') return `last ${DATA.max_age_days} days`;
+  const days = Number(v);
+  const weeks = Math.round(days / 7);
+  return `last ${weeks} weeks`;
+}
+
+function applyFilters() {
   const raw = document.getElementById('repo').value.trim();
   if (!raw) {
     FILTERED = [];
@@ -297,8 +332,16 @@ function onRepoChange() {
   }
 
   const fullName = REPOS_INDEX.org + '/' + raw;
-  FILTERED = DATA.prs.filter(p => p.repo === fullName);
-  showRepoStatus(`Showing ${FILTERED.length} merged PRs from ${fullName} over the last ${DATA.max_age_days} days.`);
+  let prs = DATA.prs.filter(p => p.repo === fullName);
+
+  const days = getTimeRangeDays();
+  if (days !== null) {
+    const cutoff = new Date(Date.now() - days * 86400 * 1000).toISOString();
+    prs = prs.filter(p => p.merged_at >= cutoff);
+  }
+
+  FILTERED = prs;
+  showRepoStatus(`Showing ${FILTERED.length} merged PRs from ${fullName} · ${getTimeRangeLabel()}.`);
   renderAll();
 }
 
