@@ -10,6 +10,7 @@ on:
     paths:
       - 'index.html'
       - 'fetch_prs.py'
+      - 'tracked-repos.txt'
       - '.github/workflows/refresh.yml'
 
 permissions:
@@ -46,7 +47,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ORG: 'adobecom'
-          TRACKED_WINDOW_DAYS: '30'
           MAX_PRS: '500'
           MAX_AGE_DAYS: '365'
         run: python fetch_prs.py
