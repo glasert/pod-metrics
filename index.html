@@ -151,7 +151,7 @@
     <div class="panel-title">Repository</div>
     <div class="repo-picker">
       <input id="repo" list="repo-options" autocomplete="off"
-             placeholder="Type to search adobecom repos…" spellcheck="false">
+             placeholder="Pick a tracked repository…" spellcheck="false">
       <datalist id="repo-options"></datalist>
       <div id="repo-status" class="repo-status"></div>
     </div>
@@ -205,8 +205,7 @@
 const ACCENT = '#3266ad';
 
 let DATA = null;       // payload from data.json
-let REPOS_INDEX = null;// payload from repos.json (full org repo list)
-let TRACKED = null;    // Set of "owner/repo" with PR data
+let REPOS_INDEX = null;// payload from repos.json (tracked repo list)
 let FILTERED = [];     // current selected repo's PRs
 let charts = { dist: null, trend: null, weekly: null };
 
@@ -221,7 +220,6 @@ async function loadData() {
     if (!reposResp.ok) throw new Error('repos.json HTTP ' + reposResp.status);
     DATA = await dataResp.json();
     REPOS_INDEX = await reposResp.json();
-    TRACKED = new Set(DATA.tracked_repos);
 
     populateRepoDropdown();
     wireInteractions();
@@ -242,22 +240,16 @@ function showFreshness() {
   const opts = { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' };
   document.getElementById('freshness').textContent =
     'Data refreshed: ' + dt.toLocaleString(undefined, opts)
-    + ' · ' + DATA.prs.length + ' merged PRs across ' + DATA.tracked_repos.length + ' tracked repos'
-    + ' · ' + REPOS_INDEX.repos.length + ' repos in ' + REPOS_INDEX.org;
+    + ' · ' + DATA.prs.length + ' merged PRs across ' + DATA.tracked_repos.length + ' repos';
 }
 
 // ── Repository picker ─────────────────────────────────────────────────────
 function populateRepoDropdown() {
   const list = document.getElementById('repo-options');
   list.innerHTML = '';
-  // Native datalist with the full org repo list. The browser handles search.
   REPOS_INDEX.repos.forEach(name => {
     const o = document.createElement('option');
     o.value = name;
-    // Mark tracked repos so a user can see which ones have data
-    if (TRACKED.has(REPOS_INDEX.org + '/' + name)) {
-      o.label = name + '  — tracked';
-    }
     list.appendChild(o);
   });
 }
@@ -297,22 +289,14 @@ function onRepoChange() {
     return;
   }
 
-  const fullName = REPOS_INDEX.org + '/' + raw;
-
   if (!REPOS_INDEX.repos.includes(raw)) {
     FILTERED = [];
-    showRepoStatus(`"${raw}" is not a repository in ${REPOS_INDEX.org}. Check the spelling or pick from the list.`, true);
+    showRepoStatus(`"${raw}" isn't in the tracked list. Pick from the dropdown.`, true);
     renderAll();
     return;
   }
 
-  if (!TRACKED.has(fullName)) {
-    FILTERED = [];
-    showRepoStatus(`${fullName} hasn't had a merged PR in the last 30 days, so no data is tracked for it. It will start appearing automatically when activity resumes.`, true);
-    renderAll();
-    return;
-  }
-
+  const fullName = REPOS_INDEX.org + '/' + raw;
   FILTERED = DATA.prs.filter(p => p.repo === fullName);
   showRepoStatus(`Showing ${FILTERED.length} merged PRs from ${fullName} over the last ${DATA.max_age_days} days.`);
   renderAll();
