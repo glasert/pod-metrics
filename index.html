@@ -530,7 +530,7 @@ function renderTable() {
             <td>${escapeHtml(p.author)}</td>
             <td>${p.created_at.slice(0,10)}</td>
             <td>${p.merged_at.slice(0,10)}</td>
-            <td class="num">${p.lead_days.toFixed(1)}d</td>
+            <td class="num">${p.lead_days.toFixed(2)}d</td>
           </tr>`).join('')}
       </tbody>
     </table>
