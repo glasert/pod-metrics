@@ -95,6 +95,56 @@
   .stat-value { font-size: 28px; font-weight: 600; }
   .stat-unit { font-size: 13px; color: var(--muted); margin-left: 4px; }
 
+  /* AI-signal comparison cards */
+  .compare-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 720px) {
+    .compare-grid { grid-template-columns: 1fr; }
+  }
+  .compare-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    background: #fafafa;
+  }
+  .compare-card-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .compare-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+  .compare-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .compare-value { font-size: 22px; font-weight: 600; }
+  .compare-unit { font-size: 12px; color: var(--muted); margin-left: 3px; }
+  .compare-note {
+    margin-top: 14px;
+    padding: 10px 12px;
+    background: #fff7ed;
+    border: 1px solid #fed7aa;
+    border-radius: 6px;
+    font-size: 12px;
+    color: #7c2d12;
+    line-height: 1.5;
+  }
+
   .charts {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -205,6 +255,40 @@
     </div>
   </div>
 
+  <div id="ai-signal-panel" class="panel" style="display:none;">
+    <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:14px; flex-wrap:wrap;">
+      <div>
+        <div class="panel-title" style="margin:0 0 2px;">AI-assisted work signal</div>
+        <div style="font-size:12px; color:var(--muted);">Comparing one engineer working with AI agents against everyone else on this repo.</div>
+      </div>
+      <div style="display:flex; align-items:center; gap:8px; font-size:13px;">
+        <label for="focusAuthor" style="color:var(--muted);">Focus on</label>
+        <select id="focusAuthor" style="padding:6px 10px; border:1px solid var(--border); border-radius:6px; font:inherit; background:white; min-width:180px;"></select>
+      </div>
+    </div>
+
+    <div class="compare-grid">
+      <div class="compare-card">
+        <div class="compare-card-title" id="focus-card-title">—</div>
+        <div class="compare-metrics">
+          <div><div class="compare-label">Average</div><div class="compare-value"><span id="focus-mean">—</span><span class="compare-unit">d</span></div></div>
+          <div><div class="compare-label">90th pct</div><div class="compare-value"><span id="focus-p90">—</span><span class="compare-unit">d</span></div></div>
+          <div><div class="compare-label">PRs</div><div class="compare-value"><span id="focus-count">—</span></div></div>
+        </div>
+      </div>
+      <div class="compare-card">
+        <div class="compare-card-title">All other contributors</div>
+        <div class="compare-metrics">
+          <div><div class="compare-label">Average</div><div class="compare-value"><span id="other-mean">—</span><span class="compare-unit">d</span></div></div>
+          <div><div class="compare-label">90th pct</div><div class="compare-value"><span id="other-p90">—</span><span class="compare-unit">d</span></div></div>
+          <div><div class="compare-label">PRs</div><div class="compare-value"><span id="other-count">—</span></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="ai-signal-note" class="compare-note"></div>
+  </div>
+
   <div class="panel">
     <div class="panel-title">Pull requests</div>
     <div class="sort-row">
@@ -224,6 +308,10 @@
 
 <script>
 const ACCENT = '#3266ad';
+
+// AI-signal widget config — edit these to change the focused engineer / repo
+const AI_SIGNAL_REPO = 'mas';
+const DEFAULT_FOCUS_AUTHOR = 'Axelcureno';
 
 let DATA = null;       // payload from data.json
 let REPOS_INDEX = null;// payload from repos.json (tracked repo list)
@@ -288,6 +376,7 @@ function wireInteractions() {
   document.getElementById('timeRange').addEventListener('change', applyFilters);
   document.getElementById('sort').addEventListener('change', renderTable);
   document.getElementById('weekMonth').addEventListener('change', renderWeeklyChart);
+  document.getElementById('focusAuthor').addEventListener('change', renderAISignal);
 }
 
 function setInitialRepo() {
@@ -355,6 +444,7 @@ function renderAll() {
   renderStats();
   renderCharts();
   renderTable();
+  renderAISignal();
 }
 
 // ── Stats ─────────────────────────────────────────────────────────────────
@@ -580,6 +670,86 @@ function renderTable() {
     ${rows.length > 200 ? `<div class="empty" style="padding: 16px;">Showing 200 of ${rows.length} PRs</div>` : ''}
   `;
   wrap.innerHTML = html;
+}
+
+// ── AI-signal comparison ──────────────────────────────────────────────────
+function renderAISignal() {
+  const panel = document.getElementById('ai-signal-panel');
+  const currentRepo = document.getElementById('repo').value.trim();
+
+  // Only show this panel for the configured repo
+  if (currentRepo !== AI_SIGNAL_REPO) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = '';
+
+  // Populate / refresh the focus-author dropdown with authors visible in the
+  // current filtered view. Preserve the user's previous pick if still present,
+  // otherwise default to DEFAULT_FOCUS_AUTHOR (even when absent — we still
+  // want to show the empty-data state for the configured engineer).
+  const sel = document.getElementById('focusAuthor');
+  const previous = sel.value;
+  const authors = [...new Set(FILTERED.map(p => p.author))].sort();
+
+  // Make sure the default author is always selectable, even when their
+  // PR count in this window is zero. This is essential to surface "no PRs
+  // in the last 4 weeks" rather than silently swapping focus.
+  const dropdownAuthors = authors.includes(DEFAULT_FOCUS_AUTHOR)
+    ? authors
+    : [DEFAULT_FOCUS_AUTHOR, ...authors];
+
+  sel.innerHTML = '';
+  dropdownAuthors.forEach(a => {
+    const o = document.createElement('option');
+    o.value = a; o.textContent = a;
+    sel.appendChild(o);
+  });
+
+  if (previous && dropdownAuthors.includes(previous)) {
+    sel.value = previous;
+  } else {
+    sel.value = DEFAULT_FOCUS_AUTHOR;
+  }
+
+  const focus = sel.value;
+  const focusPRs = FILTERED.filter(p => p.author === focus);
+  const otherPRs = FILTERED.filter(p => p.author !== focus);
+
+  fillCompareCard('focus', focus, focusPRs);
+  fillCompareCard('other', null, otherPRs);
+
+  // Caveat line — content depends on the sample-size situation
+  const note = document.getElementById('ai-signal-note');
+  const fn = focusPRs.length;
+  const on = otherPRs.length;
+  if (fn === 0) {
+    note.textContent = `${focus} has no merged PRs in the current view. Widen the time range or pick a different focus engineer.`;
+  } else if (fn < 5) {
+    note.textContent = `Small sample: ${focus} has only ${fn} PR${fn === 1 ? '' : 's'} in this view. Treat any difference as a weak signal — widen the time range for a more reliable read.`;
+  } else if (fn < on * 0.02 && on > 50) {
+    note.textContent = `Read with care: this is n-of-1 evidence. ${focus}'s ${fn} PRs are being compared against ${on} from many other contributors — selection effects, task mix, and PR scope all vary. Useful as a directional signal, not as proof.`;
+  } else {
+    note.textContent = `Read with care: this is n-of-1 evidence. One engineer's cycle time can differ from peers for many reasons (task complexity, PR scope, review patterns) independent of AI use. Useful as a directional signal, not as proof.`;
+  }
+}
+
+function fillCompareCard(prefix, name, prs) {
+  if (prefix === 'focus') {
+    document.getElementById('focus-card-title').textContent = name || '—';
+  }
+  if (!prs.length) {
+    document.getElementById(prefix + '-mean').textContent  = '—';
+    document.getElementById(prefix + '-p90').textContent   = '—';
+    document.getElementById(prefix + '-count').textContent = '0';
+    return;
+  }
+  const lead = prs.map(p => p.lead_days).sort((a, b) => a - b);
+  const mean = lead.reduce((a, b) => a + b, 0) / lead.length;
+  const p90  = quantile(lead, 0.9);
+  document.getElementById(prefix + '-mean').textContent  = mean.toFixed(1);
+  document.getElementById(prefix + '-p90').textContent   = p90.toFixed(1);
+  document.getElementById(prefix + '-count').textContent = prs.length.toLocaleString();
 }
 
 function escapeHtml(s) {
