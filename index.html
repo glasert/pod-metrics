@@ -94,6 +94,56 @@
   }
   .stat-value { font-size: 28px; font-weight: 600; }
   .stat-unit { font-size: 13px; color: var(--muted); margin-left: 4px; }
+  .stat-breakdown {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--muted);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .stat-breakdown strong { color: var(--text); font-weight: 600; }
+  .stat-sep { opacity: 0.5; }
+
+  /* Outliers list */
+  .outliers {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .outliers-row {
+    display: grid;
+    grid-template-columns: 80px 1fr 100px 100px;
+    gap: 12px;
+    padding: 10px 14px;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 13px;
+    align-items: center;
+  }
+  .outliers-row:last-child { border-bottom: none; }
+  .outliers-row.header {
+    background: #f5f5f5;
+    font-weight: 600;
+    color: var(--muted);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .outliers-row .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .outliers-row a { color: var(--accent); text-decoration: none; }
+  .outliers-row a:hover { text-decoration: underline; }
+  .outliers-empty {
+    padding: 16px;
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  @media (max-width: 720px) {
+    .outliers-row { grid-template-columns: 70px 1fr 80px; }
+    .outliers-row .hide-mobile { display: none; }
+  }
 
   /* AI-signal comparison cards */
   .compare-grid {
@@ -229,29 +279,61 @@
   </div>
 
   <div class="stats">
-    <div class="stat"><div class="stat-label">Average cycle time</div><div><span id="stat-mean" class="stat-value">—</span><span class="stat-unit">days</span></div></div>
-    <div class="stat"><div class="stat-label">90th percentile</div><div><span id="stat-p90" class="stat-value">—</span><span class="stat-unit">days</span></div></div>
+    <div class="stat">
+      <div class="stat-label">Avg total time</div>
+      <div><span id="stat-mean" class="stat-value">—</span><span class="stat-unit">days</span></div>
+      <div class="stat-breakdown">
+        <span>dev <strong id="stat-dev">—</strong>d</span>
+        <span class="stat-sep">·</span>
+        <span>review <strong id="stat-review">—</strong>d</span>
+      </div>
+    </div>
+    <div class="stat"><div class="stat-label">90th percentile (total)</div><div><span id="stat-p90" class="stat-value">—</span><span class="stat-unit">days</span></div></div>
     <div class="stat"><div class="stat-label">PRs analyzed</div><div><span id="stat-count" class="stat-value">—</span><span class="stat-unit">merged</span></div></div>
   </div>
 
   <div class="charts">
     <div class="chart-card chart-wide">
-      <h3>Cycle time distribution</h3>
+      <h3>Review time distribution</h3>
       <div class="canvas-wrap"><canvas id="distChart"></canvas></div>
     </div>
     <div class="chart-card chart-wide">
-      <h3>Monthly merged PRs &amp; average cycle time</h3>
+      <h3>Monthly merged PRs &amp; average review time</h3>
       <div class="canvas-wrap" style="height: 280px;"><canvas id="trendChart"></canvas></div>
     </div>
     <div class="chart-card chart-wide">
       <div style="display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:12px; flex-wrap:wrap;">
-        <h3 style="margin:0;">Weekly breakdown — merged PRs &amp; average cycle time</h3>
+        <h3 style="margin:0;">Weekly breakdown — merged PRs &amp; average review time</h3>
         <div style="display:flex; align-items:center; gap:8px; font-size:13px;">
           <label for="weekMonth" style="color:var(--muted);">Month</label>
           <select id="weekMonth" style="padding:6px 10px; border:1px solid var(--border); border-radius:6px; font:inherit; background:white;"></select>
         </div>
       </div>
       <div class="canvas-wrap" style="height: 280px;"><canvas id="weeklyChart"></canvas></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title" style="margin-bottom:4px;">Development time</div>
+    <div style="font-size:12px; color:var(--muted); margin-bottom:14px;">
+      Time from first commit on the branch to PR creation. Long-running branches above
+      <strong id="devOutlierThreshold">30</strong> days are flagged below — they may
+      reflect parked work, long-lived feature branches, or rebased history rather than
+      active development time.
+    </div>
+    <div class="charts">
+      <div class="chart-card chart-wide">
+        <h3>Development time distribution</h3>
+        <div class="canvas-wrap"><canvas id="devDistChart"></canvas></div>
+      </div>
+      <div class="chart-card chart-wide">
+        <h3>Monthly average development time</h3>
+        <div class="canvas-wrap" style="height: 280px;"><canvas id="devTrendChart"></canvas></div>
+      </div>
+    </div>
+    <div style="margin-top:18px;">
+      <div class="panel-title" style="margin-bottom:8px;">Flagged long-running branches</div>
+      <div id="outliers-wrap" class="outliers"></div>
     </div>
   </div>
 
@@ -296,8 +378,10 @@
       <select id="sort">
         <option value="merged_desc">Merged date ↓</option>
         <option value="merged_asc">Merged date ↑</option>
-        <option value="lead_desc">Cycle time ↓</option>
-        <option value="lead_asc">Cycle time ↑</option>
+        <option value="dev_desc">Dev time ↓</option>
+        <option value="dev_asc">Dev time ↑</option>
+        <option value="lead_desc">Review time ↓</option>
+        <option value="lead_asc">Review time ↑</option>
       </select>
     </div>
     <div id="table-wrap">
@@ -308,18 +392,25 @@
 
 <script>
 const ACCENT = '#3266ad';
+const ACCENT2 = '#a35a32';  // for dev-time series (distinct from review accent)
 
 // AI-signal widget config — edit these to change the focused engineer / repo
 const AI_SIGNAL_REPO = 'mas';
 const DEFAULT_FOCUS_AUTHOR = 'Axelcureno';
 
+// Development time: PRs above this many days are flagged as outliers
+const DEV_OUTLIER_DAYS = 30;
+
 let DATA = null;       // payload from data.json
 let REPOS_INDEX = null;// payload from repos.json (tracked repo list)
 let FILTERED = [];     // current selected repo's PRs
-let charts = { dist: null, trend: null, weekly: null };
+let charts = { dist: null, trend: null, weekly: null, devDist: null, devTrend: null };
 
 // ── Load data ─────────────────────────────────────────────────────────────
 async function loadData() {
+  // Inject the configured threshold into the explanatory copy
+  const t = document.getElementById('devOutlierThreshold');
+  if (t) t.textContent = DEV_OUTLIER_DAYS;
   try {
     const [dataResp, reposResp] = await Promise.all([
       fetch('data.json?_=' + Date.now()),
@@ -443,6 +534,8 @@ function showRepoStatus(msg, warn = false) {
 function renderAll() {
   renderStats();
   renderCharts();
+  renderDevCharts();
+  renderOutliers();
   renderTable();
   renderAISignal();
 }
@@ -458,16 +551,38 @@ function quantile(sorted, q) {
 
 function renderStats() {
   if (!FILTERED.length) {
-    ['stat-mean','stat-p90','stat-count'].forEach(id =>
+    ['stat-mean','stat-p90','stat-count','stat-dev','stat-review'].forEach(id =>
       document.getElementById(id).textContent = '—');
     return;
   }
-  const lead = FILTERED.map(p => p.lead_days).sort((a,b) => a-b);
-  const mean = lead.reduce((a,b) => a+b, 0) / lead.length;
-  const p90 = quantile(lead, 0.9);
 
-  document.getElementById('stat-mean').textContent = mean.toFixed(1);
-  document.getElementById('stat-p90').textContent = p90.toFixed(1);
+  // Review time (every merged PR has this)
+  const review = FILTERED.map(p => p.lead_days).sort((a,b) => a-b);
+  const reviewMean = review.reduce((a,b) => a+b, 0) / review.length;
+
+  // Dev time — only available for PRs where the commit fetch succeeded
+  const withDev = FILTERED.filter(p => p.dev_days != null);
+  const dev = withDev.map(p => p.dev_days).sort((a,b) => a-b);
+  const devMean = dev.length ? dev.reduce((a,b) => a+b, 0) / dev.length : null;
+
+  // Total time = dev + review, per PR, only where both are known
+  const total = withDev.map(p => p.dev_days + p.lead_days).sort((a,b) => a-b);
+  const totalMean = total.length ? total.reduce((a,b) => a+b, 0) / total.length : null;
+  const totalP90  = total.length ? quantile(total, 0.9) : quantile(review, 0.9);
+
+  // If we have no dev data at all (e.g. all commit fetches failed), fall back
+  // gracefully: show review time as the total, and mark dev/review as "—".
+  if (totalMean === null) {
+    document.getElementById('stat-mean').textContent   = reviewMean.toFixed(1);
+    document.getElementById('stat-p90').textContent    = quantile(review, 0.9).toFixed(1);
+    document.getElementById('stat-dev').textContent    = '—';
+    document.getElementById('stat-review').textContent = reviewMean.toFixed(1);
+  } else {
+    document.getElementById('stat-mean').textContent   = totalMean.toFixed(1);
+    document.getElementById('stat-p90').textContent    = totalP90.toFixed(1);
+    document.getElementById('stat-dev').textContent    = devMean.toFixed(1);
+    document.getElementById('stat-review').textContent = reviewMean.toFixed(1);
+  }
   document.getElementById('stat-count').textContent = FILTERED.length.toLocaleString();
 }
 
@@ -519,7 +634,7 @@ function renderCharts() {
       labels: months,
       datasets: [
         { type: 'bar', label: 'PRs merged', data: counts, backgroundColor: 'rgba(50,102,173,0.25)', borderRadius: 4, yAxisID: 'y1', order: 2 },
-        { type: 'line', label: 'Average cycle time (days)', data: averages, borderColor: ACCENT, backgroundColor: ACCENT, tension: 0.3, pointRadius: 4, yAxisID: 'y', order: 1 }
+        { type: 'line', label: 'Average review time (days)', data: averages, borderColor: ACCENT, backgroundColor: ACCENT, tension: 0.3, pointRadius: 4, yAxisID: 'y', order: 1 }
       ]
     },
     options: {
@@ -536,6 +651,103 @@ function renderCharts() {
   // Weekly drill-down — populate month dropdown, then render selected
   syncMonthSelector(months);
   renderWeeklyChart();
+}
+
+// ── Development time ──────────────────────────────────────────────────────
+function renderDevCharts() {
+  if (charts.devDist) { charts.devDist.destroy(); charts.devDist = null; }
+  if (charts.devTrend) { charts.devTrend.destroy(); charts.devTrend = null; }
+
+  const withDev = FILTERED.filter(p => p.dev_days != null);
+
+  // Distribution — dev-time buckets (longer tail than review time)
+  const bucketEdges = [0, 1, 2, 3, 7, 14, 30, 60, 90, Infinity];
+  const bucketLabels = ['<1d','1–2','2–3','3–7','1–2w','2–4w','1–2m','2–3m','>3m'];
+  const buckets = bucketLabels.map(() => 0);
+  withDev.forEach(p => {
+    for (let i = 0; i < bucketEdges.length - 1; i++) {
+      if (p.dev_days >= bucketEdges[i] && p.dev_days < bucketEdges[i+1]) {
+        buckets[i]++; break;
+      }
+    }
+  });
+
+  charts.devDist = new Chart(document.getElementById('devDistChart'), {
+    type: 'bar',
+    data: { labels: bucketLabels, datasets: [{ data: buckets, backgroundColor: ACCENT2, borderRadius: 4 }] },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false } },
+        y: { grid: { color: 'rgba(0,0,0,0.06)' }, beginAtZero: true, ticks: { precision: 0 } }
+      }
+    }
+  });
+
+  // Monthly trend — count + average dev time
+  const byMonth = {};
+  withDev.forEach(p => {
+    const m = p.merged_at.slice(0, 7);
+    if (!byMonth[m]) byMonth[m] = [];
+    byMonth[m].push(p.dev_days);
+  });
+  const months = Object.keys(byMonth).sort();
+  const counts = months.map(m => byMonth[m].length);
+  const averages = months.map(m => {
+    const vs = byMonth[m];
+    return vs.reduce((s, v) => s + v, 0) / vs.length;
+  });
+
+  charts.devTrend = new Chart(document.getElementById('devTrendChart'), {
+    data: {
+      labels: months,
+      datasets: [
+        { type: 'bar',  label: 'PRs (with dev data)', data: counts,   backgroundColor: 'rgba(163,90,50,0.25)', borderRadius: 4, yAxisID: 'y1', order: 2 },
+        { type: 'line', label: 'Average dev time (days)', data: averages, borderColor: ACCENT2, backgroundColor: ACCENT2, tension: 0.3, pointRadius: 4, yAxisID: 'y', order: 1 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom' } },
+      scales: {
+        x: { grid: { display: false } },
+        y:  { position: 'left',  grid: { color: 'rgba(0,0,0,0.06)' }, title: { display: true, text: 'Average days' }, beginAtZero: true },
+        y1: { position: 'right', grid: { display: false }, title: { display: true, text: 'PRs' }, beginAtZero: true, ticks: { precision: 0 } }
+      }
+    }
+  });
+}
+
+function renderOutliers() {
+  const wrap = document.getElementById('outliers-wrap');
+  const outliers = FILTERED
+    .filter(p => p.dev_days != null && p.dev_days > DEV_OUTLIER_DAYS)
+    .sort((a, b) => b.dev_days - a.dev_days);
+
+  if (!outliers.length) {
+    wrap.innerHTML = `<div class="outliers-empty">No PRs with dev time over ${DEV_OUTLIER_DAYS} days in the current view.</div>`;
+    return;
+  }
+
+  const top = outliers.slice(0, 25);
+  wrap.innerHTML = `
+    <div class="outliers-row header">
+      <div>PR</div>
+      <div>Title</div>
+      <div class="num hide-mobile">Author</div>
+      <div class="num">Dev time</div>
+    </div>
+    ${top.map(p => `
+      <div class="outliers-row">
+        <div><a href="${p.url}" target="_blank" rel="noopener">#${p.number}</a></div>
+        <div>${escapeHtml(p.title)}</div>
+        <div class="num hide-mobile">${escapeHtml(p.author)}</div>
+        <div class="num">${p.dev_days.toFixed(1)}d</div>
+      </div>
+    `).join('')}
+    ${outliers.length > 25 ? `<div class="outliers-empty">Showing top 25 of ${outliers.length} flagged PRs</div>` : ''}
+  `;
 }
 
 // ── Weekly drill-down ─────────────────────────────────────────────────────
@@ -598,7 +810,7 @@ function renderWeeklyChart() {
       labels,
       datasets: [
         { type: 'bar',  label: 'PRs merged',                  data: counts,   backgroundColor: 'rgba(50,102,173,0.25)', borderRadius: 4, yAxisID: 'y1', order: 2 },
-        { type: 'line', label: 'Average cycle time (days)',   data: averages, borderColor: ACCENT, backgroundColor: ACCENT, tension: 0.3, pointRadius: 4, yAxisID: 'y',  order: 1, spanGaps: true }
+        { type: 'line', label: 'Average review time (days)',   data: averages, borderColor: ACCENT, backgroundColor: ACCENT, tension: 0.3, pointRadius: 4, yAxisID: 'y',  order: 1, spanGaps: true }
       ]
     },
     options: {
@@ -631,11 +843,21 @@ function renderWeeklyChart() {
 function renderTable() {
   const sort = document.getElementById('sort').value;
   const rows = FILTERED.slice();
+  // For dev_days sorts, push null values to the bottom regardless of direction
+  const devCmp = (dir) => (a, b) => {
+    const av = a.dev_days, bv = b.dev_days;
+    if (av == null && bv == null) return 0;
+    if (av == null) return 1;
+    if (bv == null) return -1;
+    return dir === 'desc' ? bv - av : av - bv;
+  };
   const cmp = {
     merged_desc: (a,b) => b.merged_at.localeCompare(a.merged_at),
     merged_asc:  (a,b) => a.merged_at.localeCompare(b.merged_at),
     lead_desc:   (a,b) => b.lead_days - a.lead_days,
     lead_asc:    (a,b) => a.lead_days - b.lead_days,
+    dev_desc:    devCmp('desc'),
+    dev_asc:     devCmp('asc'),
   }[sort];
   rows.sort(cmp);
 
@@ -651,7 +873,8 @@ function renderTable() {
       <thead>
         <tr>
           <th>#</th><th>Title</th><th>Repo</th><th>Author</th>
-          <th>Created</th><th>Merged</th><th class="num">Cycle time</th>
+          <th>Created</th><th>Merged</th>
+          <th class="num">Dev</th><th class="num">Review</th>
         </tr>
       </thead>
       <tbody>
@@ -663,6 +886,7 @@ function renderTable() {
             <td>${escapeHtml(p.author)}</td>
             <td>${p.created_at.slice(0,10)}</td>
             <td>${p.merged_at.slice(0,10)}</td>
+            <td class="num">${p.dev_days != null ? p.dev_days.toFixed(2) + 'd' : '—'}</td>
             <td class="num">${p.lead_days.toFixed(2)}d</td>
           </tr>`).join('')}
       </tbody>
