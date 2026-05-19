@@ -378,6 +378,8 @@
       <select id="sort">
         <option value="merged_desc">Merged date ↓</option>
         <option value="merged_asc">Merged date ↑</option>
+        <option value="author_asc">Author A–Z</option>
+        <option value="author_desc">Author Z–A</option>
         <option value="dev_desc">Dev time ↓</option>
         <option value="dev_asc">Dev time ↑</option>
         <option value="lead_desc">Review time ↓</option>
@@ -851,6 +853,12 @@ function renderTable() {
     if (bv == null) return -1;
     return dir === 'desc' ? bv - av : av - bv;
   };
+  const authorCmp = (dir) => (a, b) => {
+    const av = a.author.toLowerCase(), bv = b.author.toLowerCase();
+    if (av !== bv) return dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+    // Same author: newest merged first
+    return b.merged_at.localeCompare(a.merged_at);
+  };
   const cmp = {
     merged_desc: (a,b) => b.merged_at.localeCompare(a.merged_at),
     merged_asc:  (a,b) => a.merged_at.localeCompare(b.merged_at),
@@ -858,6 +866,8 @@ function renderTable() {
     lead_asc:    (a,b) => a.lead_days - b.lead_days,
     dev_desc:    devCmp('desc'),
     dev_asc:     devCmp('asc'),
+    author_asc:  authorCmp('asc'),
+    author_desc: authorCmp('desc'),
   }[sort];
   rows.sort(cmp);
 
