@@ -21,7 +21,17 @@ Two outputs:
     "org": "adobecom",
     "tracked_repos": ["adobecom/mas", "adobecom/mas-pinata", ...],
     "max_age_days": 365,
-    "prs": [ { number, title, repo, author, created_at, merged_at, lead_days, url }, ... ]
+    "prs": [
+      {
+        number, title, repo, author,
+        first_commit_at,  # ISO8601 — earliest commit on the PR branch (or null)
+        created_at,       # ISO8601 — PR opened
+        merged_at,        # ISO8601 — PR merged
+        dev_days,         # first_commit_at → created_at (null if no commits)
+        lead_days,        # created_at → merged_at (review/merge time)
+        url
+      }, ...
+    ]
   }
 
 Environment variables:
@@ -97,6 +107,25 @@ def read_tracked_repos(path):
     return sorted(deduped)
 
 
+def first_commit_at(full_name, pr_number):
+    """Return committer-date of the earliest commit on the PR's branch, or None.
+
+    GitHub returns commits in chronological order (oldest first) via the
+    /pulls/{N}/commits endpoint. Page 1 with per_page=100 gives us the start
+    of the branch in one call, which covers the vast majority of PRs. If a
+    PR has 100+ commits, we still get the earliest from page 1 — no extra
+    pagination needed.
+    """
+    url = f"https://api.github.com/repos/{full_name}/pulls/{pr_number}/commits"
+    params = {"per_page": 100, "page": 1}
+    batch = get_json(url, params=params)
+    if not batch:
+        return None
+    first = batch[0]
+    committer = first.get("commit", {}).get("committer", {})
+    return parse_dt(committer.get("date"))
+
+
 def fetch_merged_prs(full_name):
     """Fetch merged PRs for one repo, newest first, up to MAX_PRS or PR_CUTOFF."""
     print(f"  Fetching {full_name} …", flush=True)
@@ -128,13 +157,34 @@ def fetch_merged_prs(full_name):
                 continue
             created_at = parse_dt(pr["created_at"])
             lead_days = round((merged_at - created_at).total_seconds() / 86400, 3)
+
+            # Fetch the earliest commit on the branch for dev-time metric.
+            # One extra API call per PR. Failures (deleted branch, etc.) are
+            # tolerated — we just record null dev_days for that PR.
+            try:
+                first_at = first_commit_at(full_name, pr["number"])
+            except requests.HTTPError as e:
+                print(f"      WARN: PR #{pr['number']} commits fetch failed ({e})")
+                first_at = None
+
+            if first_at is not None:
+                dev_seconds = (created_at - first_at).total_seconds()
+                # Guard against negative values (rare clock-skew edge case)
+                dev_days = round(max(dev_seconds, 0) / 86400, 3)
+                first_commit_iso = first_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+            else:
+                dev_days = None
+                first_commit_iso = None
+
             out.append({
                 "number": pr["number"],
                 "title": pr["title"],
                 "repo": full_name,
                 "author": (pr.get("user") or {}).get("login", "unknown"),
+                "first_commit_at": first_commit_iso,
                 "created_at": pr["created_at"],
                 "merged_at": pr["merged_at"],
+                "dev_days": dev_days,
                 "lead_days": lead_days,
                 "url": pr["html_url"],
             })
